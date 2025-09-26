@@ -1,0 +1,68 @@
+@use "../functions";
+
+.list-unstyled-border li {
+  border-bottom: 1px solid #f9f9f9;
+  padding-bottom: 15px;
+  margin-bottom: 15px;
+  .custom-checkbox {
+    margin-right: 15px;
+  }
+  &:last-child {
+  	margin-bottom: 0;
+  	padding-bottom: 0;
+    border-bottom: none;
+  }
+}
+
+.list-unstyled-noborder li:last-child {
+  border-bottom: none;
+}
+
+.list-group-item {
+  &.active {
+    background-color: functions.color(primary);
+  }
+  &.disabled {
+    color: functions.color_darken(light, 8%);
+  }
+}
+
+.list-group-item-primary {
+  background-color: functions.color(primary);
+  color: #fff;
+}
+
+.list-group-item-secondary {
+  background-color: functions.color(secondary);
+  color: #fff;
+}
+
+.list-group-item-success {
+  background-color: functions.color(success);
+  color: #fff;
+}
+
+.list-group-item-danger {
+  background-color: functions.color(danger);
+  color: #fff;
+}
+
+.list-group-item-warning {
+  background-color: functions.color(warning);
+  color: #fff;
+}
+
+.list-group-item-info {
+  background-color: functions.color(info);
+  color: #fff;
+}
+
+.list-group-item-light {
+  background-color: functions.color(light);
+  color: functions.color(dark);
+}
+
+.list-group-item-dark {
+  background-color: functions.color(dark);
+  color: #fff;
+}

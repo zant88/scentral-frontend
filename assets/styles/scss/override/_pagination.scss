@@ -1,0 +1,33 @@
+@use "../functions";
+
+.page-item {
+  .page-link {
+    color: functions.color(primary);
+    border-radius: 3px;
+    margin: 0 3px;
+  }
+  &.active .page-link {
+    background-color: functions.color(primary);
+    border-color: functions.color(primary);
+  }
+  &.disabled .page-link {
+    border-color: transparent;
+    background-color: functions.color_lighten(primary, 31.7%);
+    color: functions.color(primary);
+    opacity: .6;
+  }
+}
+
+.page-link {
+  border-color: transparent;
+  background-color: functions.color_lighten(primary, 31.7%);
+  font-weight: 600;
+  &:hover {
+    background-color: functions.color(primary);
+    color: #fff;
+    border-color: transparent;
+  }
+  &:focus {
+    box-shadow: none;
+  }
+}

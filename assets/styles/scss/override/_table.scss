@@ -1,0 +1,123 @@
+@use "sass:map";
+@use "../functions";
+@use "../mixin";
+@use "../variable";
+
+.table {
+  color: inherit;
+  td, &:not(.table-bordered) th {
+    border-top: none;
+  }
+  &:not(.table-sm):not(.table-md):not(.dataTable) td,
+  &:not(.table-sm):not(.table-md):not(.dataTable) th {
+    padding: 0 25px;
+    height: 60px;
+    vertical-align: middle;
+  }
+  &:not(.table-sm) thead th {
+    border-bottom: none;
+    background-color: rgba(0, 0, 0, 0.04);
+    color: #666;
+    padding-top: 15px;
+    padding-bottom: 15px;
+  }
+  &.table-md th,
+  &.table-md td {
+    padding: 10px 15px;
+  }
+  &.table-bordered td,
+  &.table-bordered th {
+    border-color: #f6f6f6;
+  }
+  .status {
+    .status-text {
+      font-size: 12px;
+      font-weight: bold;
+      padding: 2px 8px;
+      border-radius: 10px;
+      text-transform: capitalize;
+      border: 2px solid functions.color(fontdark);
+      text-align: center;
+      &.new {
+        color: functions.color(success);
+        border-color: functions.color(success);
+      }
+      &.done {
+        color: functions.color(primary);
+        border-color: functions.color(primary);
+      }
+      &.skip {
+        color: functions.color(danger);
+        border-color: functions.color(danger);
+      }
+    }
+  }
+}
+
+.table-links {
+  color: functions.color(fontdark);
+  font-size: 12px;
+  margin-top: 5px;
+  opacity: 0;
+  transition: all .3s;
+  a {
+    color: #666;
+  }
+}
+
+table tr:hover .table-links {
+  opacity: 1;
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+@include mixin.media-breakpoint-down(xs) {
+  .table-responsive {
+    table {
+      min-width: 800px;
+    }
+  }
+}
+
+table tr {
+  .checkbox {
+    width: 20px;
+  }
+  .number-cell {
+    width: 50px;
+  }
+} 
+
+.check-all {
+  margin-left: 25px;
+}
+
+.actionable {
+  display: flex;
+  justify-content: space-between;
+  .left-action {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+}
+
+.table-responsive {
+  overflow: visible;
+  .simple-typeahead-list {
+    border: 1px solid #e4e6fc !important;
+    .simple-typeahead-list-item {
+      background-color: white !important;
+      &.simple-typeahead-list-item-active {
+        background-color: map.get(variable.$colors, primary) !important;
+        color: white !important;
+      }
+      .simple-typeahead-list-item-text {
+        
+      } 
+      
+    }
+  }
+}

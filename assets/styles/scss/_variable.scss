@@ -1,0 +1,39 @@
+$colors: (
+  primary:        #DFA194, // pastel but deeper
+  secondary:      #7CA7C7, // blue pastel, more contrast
+  success:        #4CBBA4, // green pastel, more contrast
+  info:           #5CA8D6, // info blue, more contrast
+  warning:        #FFD580, // yellow pastel, more contrast
+  danger:         #E57373, // red pastel, more contrast
+  light:          #F8EDEB, // keep light for backgrounds
+  grey:           #7C6E65, // deeper grey for text
+  whitesmoke:     #F7F9F9,
+  dark:           #34395e, // much deeper for text/headers
+  muted:          #A89F91, // muted brown
+  body:           #F4F6F9,
+  font:           #34395e, // use dark for font
+  fontdark:       #191d21, // even deeper for headings
+  white:          #ffffff,
+
+  // Form Control
+  formcontrol_normal_background:    #FDF6F0,
+  formcontrol_normal_border:        #DFA194,
+  formcontrol_focus_background:     #FFF6F0,
+  formcontrol_focus_border:         #DFA194,
+
+  // Utilities
+  section_title_line: #DFA194,
+);
+
+$font_family:   'Nunito', 'Segoe UI', arial;
+$font_weight:   400;
+$font_size:     14px;
+
+$grid-breakpoints: (
+  xs: 0,
+  sm: 576px,
+  md: 768px,
+  lg: 992px,
+  xl: 1200px
+) !default;
+

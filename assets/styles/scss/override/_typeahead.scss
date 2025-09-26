@@ -1,0 +1,18 @@
+/* Ensure the dropdown is positioned relative to the viewport */
+.simple-typeahead {
+  .simple-typeahead-list {
+    // position: fixed !important; /* Override default positioning */
+    z-index: 1000; /* Ensure it appears above other elements */
+    background-color: white;
+    border: 1px solid #ccc;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .simple-typeahead-list-item {
+    padding: 8px;
+    cursor: pointer;
+    &:hover {
+      background-color: #f0f0f0;
+    }
+  }
+}
