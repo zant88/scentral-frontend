@@ -82,6 +82,10 @@
 </template>
 
 <script setup>
+definePageMeta({
+  middleware: 'brand'
+})
+
 import { ref } from 'vue';
 import { useToast } from 'vue-toast-notification';
 import 'vue-toast-notification/dist/theme-sugar.css';
@@ -99,7 +103,6 @@ const logoPreview = ref('');
 const logoError = ref('');
 const isDragOver = ref(false);
 const fileInput = ref(null);
-
 
 const triggerFileInput = () => {
   fileInput.value.click();

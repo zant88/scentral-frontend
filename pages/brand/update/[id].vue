@@ -190,7 +190,7 @@ onMounted(() => { fetchBrand(); });
 
 definePageMeta({
   layout: 'default',
-  middleware: 'auth'
+  middleware: 'brand'
 });
 </script>
 

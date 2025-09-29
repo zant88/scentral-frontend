@@ -5,6 +5,47 @@ export function isLoggedIn() {
   return !!accessToken;
 }
 
+export function getUserRole() {
+  if (typeof window === 'undefined') return null;
+  const user = localStorage.getItem('user');
+  if (!user) return null;
+  try {
+    const userData = JSON.parse(user);
+    return userData.role || null;
+  } catch (error) {
+    console.error('Error parsing user data:', error);
+    return null;
+  }
+}
+
+export function getUserData() {
+  if (typeof window === 'undefined') return null;
+  const user = localStorage.getItem('user');
+  if (!user) return null;
+  try {
+    return JSON.parse(user);
+  } catch (error) {
+    console.error('Error parsing user data:', error);
+    return null;
+  }
+}
+
+export function isAdmin() {
+  return getUserRole() === 'admin';
+}
+
+export function isBrand() {
+  return getUserRole() === 'brand';
+}
+
+export function logout() {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('refresh_token');
+  localStorage.removeItem('user');
+  window.location.href = '/login';
+}
+
 export async function fetchWithAuth(url, options = {}) {
   let accessToken = localStorage.getItem('access_token');
   let refreshToken = localStorage.getItem('refresh_token');

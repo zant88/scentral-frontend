@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complete Login Test - Scentral</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        input, button {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .result {
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .status {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Scentral Login Functionality Test</h1>
+    
+    <!-- Backend Health Check -->
+    <div class="test-container">
+        <h2>Backend Health Check</h2>
+        <button onclick="checkBackendHealth()">Check Backend Status</button>
+        <div id="health-result"></div>
+    </div>
+
+    <!-- Admin Login Test -->
+    <div class="test-container">
+        <h2>Admin Login Test</h2>
+        <div class="test-form">
+            <input type="email" id="admin-email" value="admin@scentral.id" placeholder="Admin Email">
+            <input type="password" id="admin-password" value="password" placeholder="Password">
+            <button onclick="testAdminLogin()">Test Admin Login</button>
+        </div>
+        <div id="admin-result"></div>
+    </div>
+
+    <!-- Brand Login Test -->
+    <div class="test-container">
+        <h2>Brand Login Test</h2>
+        <div class="test-form">
+            <input type="email" id="brand-email" value="brand@scentral.com" placeholder="Brand Email">
+            <input type="password" id="brand-password" value="password" placeholder="Password">
+            <button onclick="testBrandLogin()">Test Brand Login</button>
+        </div>
+        <div id="brand-result"></div>
+    </div>
+
+    <!-- Token Storage Test -->
+    <div class="test-container">
+        <h2>Token Storage Test</h2>
+        <button onclick="checkTokenStorage()">Check Current Tokens</button>
+        <button onclick="clearTokens()">Clear All Tokens</button>
+        <div id="token-result"></div>
+    </div>
+
+    <!-- Navigation Test -->
+    <div class="test-container">
+        <h2>Navigation Test</h2>
+        <button onclick="testNavigation()">Test Dashboard Access</button>
+        <div id="nav-result"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3030';
+
+        async function checkBackendHealth() {
+            const resultDiv = document.getElementById('health-result');
+            resultDiv.innerHTML = '<div class="info">Checking backend health...</div>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/user/login`, {
+                    method: 'OPTIONS'
+                });
+                
+                if (response.status === 200 || response.status === 204) {
+                    resultDiv.innerHTML = '<div class="success">✅ Backend is running and accessible</div>';
+                } else {
+                    resultDiv.innerHTML = '<div class="error">⚠️ Backend responded with status: ' + response.status + '</div>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<div class="error">❌ Backend is not accessible: ' + error.message + '</div>';
+            }
+        }
+
+        async function testAdminLogin() {
+            const email = document.getElementById('admin-email').value;
+            const password = document.getElementById('admin-password').value;
+            const resultDiv = document.getElementById('admin-result');
+            
+            resultDiv.innerHTML = '<div class="info">Testing admin login...</div>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/user/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        phone_email: email,
+                        password: password
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.meta.success) {
+                    // Store tokens like the frontend does
+                    localStorage.setItem('access_token', data.data.access_token);
+                    localStorage.setItem('refresh_token', data.data.refresh_token);
+                    localStorage.setItem('user', JSON.stringify(data.data.user));
+                    
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            ✅ Admin login successful!<br>
+                            <strong>User:</strong> ${data.data.user.username}<br>
+                            <strong>Email:</strong> ${data.data.user.email}<br>
+                            <strong>Role:</strong> ${data.data.user.role}<br>
+                            <strong>Expected Redirect:</strong> /admin/dashboard<br>
+                            <strong>Token Received:</strong> Yes
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ Admin login failed: ${data.meta.message}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Admin login error: ${error.message}</div>`;
+            }
+        }
+
+        async function testBrandLogin() {
+            const email = document.getElementById('brand-email').value;
+            const password = document.getElementById('brand-password').value;
+            const resultDiv = document.getElementById('brand-result');
+            
+            resultDiv.innerHTML = '<div class="info">Testing brand login...</div>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/user/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        phone_email: email,
+                        password: password
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.meta.success) {
+                    // Store tokens like the frontend does
+                    localStorage.setItem('access_token', data.data.access_token);
+                    localStorage.setItem('refresh_token', data.data.refresh_token);
+                    localStorage.setItem('user', JSON.stringify(data.data.user));
+                    
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            ✅ Brand login successful!<br>
+                            <strong>User:</strong> ${data.data.user.username}<br>
+                            <strong>Email:</strong> ${data.data.user.email}<br>
+                            <strong>Role:</strong> ${data.data.user.role}<br>
+                            <strong>Expected Redirect:</strong> /brand/dashboard<br>
+                            <strong>Token Received:</strong> Yes
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ Brand login failed: ${data.meta.message}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Brand login error: ${error.message}</div>`;
+            }
+        }
+
+        function checkTokenStorage() {
+            const resultDiv = document.getElementById('token-result');
+            const accessToken = localStorage.getItem('access_token');
+            const refreshToken = localStorage.getItem('refresh_token');
+            const user = localStorage.getItem('user');
+            
+            let result = '<div class="info"><strong>Current Token Storage:</strong><br>';
+            result += `Access Token: ${accessToken ? '✅ Present' : '❌ Missing'}<br>`;
+            result += `Refresh Token: ${refreshToken ? '✅ Present' : '❌ Missing'}<br>`;
+            result += `User Data: ${user ? '✅ Present' : '❌ Missing'}<br>`;
+            
+            if (user) {
+                try {
+                    const userData = JSON.parse(user);
+                    result += `<strong>User Role:</strong> ${userData.role}<br>`;
+                    result += `<strong>User Email:</strong> ${userData.email}`;
+                } catch (e) {
+                    result += '<strong>User Data:</strong> Invalid JSON';
+                }
+            }
+            result += '</div>';
+            
+            resultDiv.innerHTML = result;
+        }
+
+        function clearTokens() {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
+            localStorage.removeItem('user');
+            
+            document.getElementById('token-result').innerHTML = '<div class="success">✅ All tokens cleared</div>';
+        }
+
+        function testNavigation() {
+            const resultDiv = document.getElementById('nav-result');
+            const user = localStorage.getItem('user');
+            
+            if (!user) {
+                resultDiv.innerHTML = '<div class="error">❌ No user data found. Please login first.</div>';
+                return;
+            }
+            
+            try {
+                const userData = JSON.parse(user);
+                const role = userData.role;
+                
+                let dashboardUrl;
+                if (role === 'admin') {
+                    dashboardUrl = 'http://localhost:4000/admin/dashboard';
+                } else if (role === 'brand') {
+                    dashboardUrl = 'http://localhost:4000/brand/dashboard';
+                } else {
+                    dashboardUrl = 'http://localhost:4000/';
+                }
+                
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        ✅ Navigation test ready<br>
+                        <strong>User Role:</strong> ${role}<br>
+                        <strong>Expected Dashboard:</strong> ${dashboardUrl}<br>
+                        <a href="${dashboardUrl}" target="_blank" style="color: #007bff; text-decoration: underline;">🔗 Open Dashboard</a>
+                    </div>
+                `;
+            } catch (e) {
+                resultDiv.innerHTML = '<div class="error">❌ Invalid user data</div>';
+            }
+        }
+
+        // Auto-check backend health on page load
+        window.onload = function() {
+            checkBackendHealth();
+        };
+    </script>
+</body>
+</html>
