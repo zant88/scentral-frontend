@@ -98,6 +98,12 @@
               </a>
             </li>
             <li class="menu-header">System Management</li>
+            <li class="nav-item" :class="isActive('/admin/apk-releases')">
+              <a href="javascript:void(0)" @click="navigateTo('/admin/apk-releases')" class="nav-link">
+                <i class="fas fa-mobile-alt"></i>
+                <span>APK Release Manager</span>
+              </a>
+            </li>
             <li class="nav-item" :class="isActive('/user')">
               <a href="javascript:void(0)" @click="navigateTo('/user')" class="nav-link">
                 <i class="fas fa-user-cog"></i>

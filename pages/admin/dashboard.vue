@@ -8,8 +8,8 @@
       </div>
     </div>
     <div class="section-body">
-      <h2 class="section-title">Advertising System Overview</h2>
-      <p class="section-lead">Comprehensive analytics for slot-based advertising system</p>
+      <h2 class="section-title">System Overview</h2>
+      <p class="section-lead">Comprehensive analytics for advertising and APK release systems</p>
       
       <!-- Statistics Cards -->
       <div class="row">
@@ -51,6 +51,46 @@
         </div>
       </div>
 
+      <!-- APK Release Statistics -->
+      <div class="row">
+        <div class="col-lg-3 col-md-6 col-sm-6 col-12">
+          <div class="card card-statistic-1">
+            <div class="card-icon bg-danger"><i class="fas fa-mobile-alt"></i></div>
+            <div class="card-wrap">
+              <div class="card-header"><h4>Total APKs</h4></div>
+              <div class="card-body">{{ apkStats.totalAPKs }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-3 col-md-6 col-sm-6 col-12">
+          <div class="card card-statistic-1">
+            <div class="card-icon bg-success"><i class="fas fa-download"></i></div>
+            <div class="card-wrap">
+              <div class="card-header"><h4>Latest APKs</h4></div>
+              <div class="card-body">{{ apkStats.latestAPKs }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-3 col-md-6 col-sm-6 col-12">
+          <div class="card card-statistic-1">
+            <div class="card-icon bg-warning"><i class="fas fa-archive"></i></div>
+            <div class="card-wrap">
+              <div class="card-header"><h4>Deprecated APKs</h4></div>
+              <div class="card-body">{{ apkStats.deprecatedAPKs }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-3 col-md-6 col-sm-6 col-12">
+          <div class="card card-statistic-1">
+            <div class="card-icon bg-info"><i class="fas fa-chart-pie"></i></div>
+            <div class="card-wrap">
+              <div class="card-header"><h4>Total Downloads</h4></div>
+              <div class="card-body">{{ apkStats.totalDownloads }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Charts Row -->
       <div class="row">
         <div class="col-lg-8 col-md-12 col-12 col-sm-12">
@@ -80,6 +120,65 @@
             </div>
             <div class="card-body">
               <canvas id="adTypeChart" height="200"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- APK Release Distribution -->
+      <div class="row">
+        <div class="col-lg-6 col-md-12 col-12 col-sm-12">
+          <div class="card">
+            <div class="card-header">
+              <h4>APK Release Distribution</h4>
+            </div>
+            <div class="card-body">
+              <canvas id="apkDistributionChart" height="200"></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-6 col-md-12 col-12 col-sm-12">
+          <div class="card">
+            <div class="card-header">
+              <h4>Recent APK Releases</h4>
+              <div class="card-header-action">
+                <a href="/admin/apk-releases" class="btn btn-primary">View All APKs</a>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-striped">
+                  <thead>
+                    <tr>
+                      <th>App Name</th>
+                      <th>Version</th>
+                      <th>Status</th>
+                      <th>Created</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="apk in recentAPKs" :key="apk.id">
+                      <td>
+                        <div class="d-flex align-items-center">
+                          <div class="avatar avatar-sm mr-2">
+                            <i class="fas fa-mobile-alt text-primary"></i>
+                          </div>
+                          <div>
+                            <div class="font-weight-600">{{ apk.app_name }}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td>{{ apk.version_name }}</td>
+                      <td>
+                        <span v-if="apk.is_latest" class="badge badge-success">Latest</span>
+                        <span v-if="apk.is_deprecated" class="badge badge-danger">Deprecated</span>
+                        <span v-if="!apk.is_latest && !apk.is_deprecated" class="badge badge-secondary">Old Version</span>
+                      </td>
+                      <td>{{ formatDate(apk.created_at) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
@@ -266,24 +365,31 @@ const stats = ref({
   totalBalance: 0
 })
 
+const apkStats = ref({
+  totalAPKs: 0,
+  latestAPKs: 0,
+  deprecatedAPKs: 0,
+  totalDownloads: 0
+})
+
 const slotUsage = ref([])
 const topBrands = ref([])
 const recentVideos = ref([])
+const recentAPKs = ref([])
 const playbackData = ref([])
 const adTypeData = ref([])
+const apkDistributionData = ref([])
 
 // Chart instances
 let playbackChart = null
 let adTypeChart = null
+let apkDistributionChart = null
 
 // Fetch dashboard data
 const fetchDashboardData = async () => {
   try {
-    const accessToken = localStorage.getItem('access_token')
-    const headers = { 'Authorization': `Bearer ${accessToken}` }
-
     // Fetch analytics summary
-    const summaryRes = await fetchWithAuth(`${apiUrl}/api/analytics/summary`, { headers })
+    const summaryRes = await fetchWithAuth(`${apiUrl}/api/analytics/summary`)
     const summaryData = await summaryRes.json()
     
     if (summaryData.success) {
@@ -295,8 +401,41 @@ const fetchDashboardData = async () => {
       }
     }
 
+    // Fetch APK statistics
+    const apkRes = await fetchWithAuth(`${apiUrl}/api/apk-release`)
+    const apkData = await apkRes.json()
+    
+    if (apkData.success) {
+      const apkReleases = apkData.data || []
+      apkStats.value = {
+        totalAPKs: apkReleases.length,
+        latestAPKs: apkReleases.filter(apk => apk.is_latest).length,
+        deprecatedAPKs: apkReleases.filter(apk => apk.is_deprecated).length,
+        totalDownloads: 0 // This would need a separate tracking system
+      }
+      
+      // Get recent APKs (last 5)
+      recentAPKs.value = apkReleases
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        .slice(0, 5)
+      
+      // Prepare APK distribution data
+      const appDistribution = {}
+      apkReleases.forEach(apk => {
+        if (!appDistribution[apk.app_name]) {
+          appDistribution[apk.app_name] = 0
+        }
+        appDistribution[apk.app_name]++
+      })
+      
+      apkDistributionData.value = Object.keys(appDistribution).map(appName => ({
+        name: appName,
+        count: appDistribution[appName]
+      }))
+    }
+
     // Fetch slot analytics
-    const slotRes = await fetchWithAuth(`${apiUrl}/api/analytics/slot`, { headers })
+    const slotRes = await fetchWithAuth(`${apiUrl}/api/analytics/slot`)
     const slotData = await slotRes.json()
     
     if (slotData.success) {
@@ -304,7 +443,7 @@ const fetchDashboardData = async () => {
     }
 
     // Fetch video analytics
-    const videoRes = await fetchWithAuth(`${apiUrl}/api/analytics/video`, { headers })
+    const videoRes = await fetchWithAuth(`${apiUrl}/api/analytics/video`)
     const videoData = await videoRes.json()
     
     if (videoData.success) {
@@ -374,6 +513,25 @@ const initCharts = async () => {
       }
     })
   }
+
+  // APK Distribution Chart
+  const apkDistributionCtx = document.getElementById('apkDistributionChart')
+  if (apkDistributionCtx && window.Chart) {
+    apkDistributionChart = new window.Chart(apkDistributionCtx, {
+      type: 'pie',
+      data: {
+        labels: apkDistributionData.value.map(d => d.name),
+        datasets: [{
+          data: apkDistributionData.value.map(d => d.count),
+          backgroundColor: ['#6777ef', '#47c363', '#ffa426', '#fc544b', '#3abaf4', '#f36196']
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false
+      }
+    })
+  }
 }
 
 // Utility functions
@@ -435,12 +593,16 @@ onMounted(async () => {
 .bg-success { background: #47c363; }
 .bg-warning { background: #ffa426; }
 .bg-info { background: #3abaf4; }
+.bg-danger { background: #fc544b; }
 
 .avatar {
   width: 40px;
   height: 40px;
   border-radius: 50%;
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .avatar img {
