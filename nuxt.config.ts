@@ -51,9 +51,7 @@ export default defineNuxtConfig({
     }
   },
   devtools: { 
-    enabled: true,
-    // Disable WebSocket connection to prevent /ws errors
-    ws: false
+    enabled: true
   },
   
   // Disable SSR to prevent WebSocket connection issues in development

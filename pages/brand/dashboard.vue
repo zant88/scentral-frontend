@@ -4,277 +4,248 @@
       <h1>Brand Dashboard</h1>
       <div class="section-header-breadcrumb">
         <div class="breadcrumb-item active"><a href="#">Dashboard</a></div>
-        <div class="breadcrumb-item">Brand Overview</div>
+        <div class="breadcrumb-item">Overview</div>
       </div>
     </div>
     <div class="section-body">
-      <h2 class="section-title">{{ brandInfo.name }} Analytics</h2>
-      <p class="section-lead">Your advertising performance and video management</p>
-      
-      <!-- Brand Statistics Cards -->
+      <h2 class="section-title">Welcome back, {{ brandInfo.name }}!</h2>
+      <p class="section-lead">
+        Monitor your advertisement performance and manage your account.
+      </p>
+
+      <!-- Summary Cards -->
       <div class="row">
-        <div class="col-lg-3 col-md-6 col-sm-6 col-12">
+        <div class="col-lg-3 col-md-6">
           <div class="card card-statistic-1">
-            <div class="card-icon bg-primary"><i class="fas fa-video"></i></div>
+            <div class="card-icon bg-primary">
+              <i class="fas fa-play"></i>
+            </div>
             <div class="card-wrap">
-              <div class="card-header"><h4>My Videos</h4></div>
-              <div class="card-body">{{ brandStats.totalVideos }}</div>
+              <div class="card-header">
+                <h4>Total Plays</h4>
+              </div>
+              <div class="card-body">
+                {{ formatNumber(analytics.total_plays) }}
+              </div>
             </div>
           </div>
         </div>
-        <div class="col-lg-3 col-md-6 col-sm-6 col-12">
+        <div class="col-lg-3 col-md-6">
           <div class="card card-statistic-1">
-            <div class="card-icon bg-success"><i class="fas fa-play-circle"></i></div>
+            <div class="card-icon bg-success">
+              <i class="fas fa-dollar-sign"></i>
+            </div>
             <div class="card-wrap">
-              <div class="card-header"><h4>Total Plays</h4></div>
-              <div class="card-body">{{ brandStats.totalPlays }}</div>
+              <div class="card-header">
+                <h4>Total Spend</h4>
+              </div>
+              <div class="card-body">
+                {{ formatCurrency(analytics.total_spend) }}
+              </div>
             </div>
           </div>
         </div>
-        <div class="col-lg-3 col-md-6 col-sm-6 col-12">
+        <div class="col-lg-3 col-md-6">
           <div class="card card-statistic-1">
-            <div class="card-icon bg-warning"><i class="fas fa-coins"></i></div>
+            <div class="card-icon bg-warning">
+              <i class="fas fa-video"></i>
+            </div>
             <div class="card-wrap">
-              <div class="card-header"><h4>Balance</h4></div>
-              <div class="card-body">{{ brandStats.balance }}</div>
+              <div class="card-header">
+                <h4>Active Videos</h4>
+              </div>
+              <div class="card-body">
+                {{ analytics.active_videos }}
+              </div>
             </div>
           </div>
         </div>
-        <div class="col-lg-3 col-md-6 col-sm-6 col-12">
+        <div class="col-lg-3 col-md-6">
           <div class="card card-statistic-1">
-            <div class="card-icon bg-info"><i class="fas fa-clock"></i></div>
+            <div :class="getBalanceCardClass()" class="card-icon">
+              <i class="fas fa-wallet"></i>
+            </div>
             <div class="card-wrap">
-              <div class="card-header"><h4>Total Playtime</h4></div>
-              <div class="card-body">{{ formatDuration(brandStats.totalPlaytime) }}</div>
+              <div class="card-header">
+                <h4>Current Balance</h4>
+              </div>
+              <div class="card-body">
+                {{ formatCurrency(brandInfo.balance) }}
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Balance Management -->
+      <!-- Balance Alert -->
+      <div v-if="brandInfo.balance < 100000" class="alert alert-warning" role="alert">
+        <i class="fas fa-exclamation-triangle mr-2"></i>
+        <strong>Low Balance Alert:</strong> Your current balance is {{ formatCurrency(brandInfo.balance) }}. 
+        Please top up your balance to ensure your advertisements continue running.
+        <button @click="showTopUpModal" class="btn btn-sm btn-warning ml-2">
+          <i class="fas fa-plus mr-1"></i>Top Up Now
+        </button>
+      </div>
+
+      <!-- Performance Charts -->
       <div class="row">
-        <div class="col-lg-4 col-md-12">
+        <div class="col-md-8">
           <div class="card">
             <div class="card-header">
-              <h4>Balance Management</h4>
+              <h4>Performance Overview</h4>
+              <div class="card-header-action">
+                <select v-model="selectedPeriod" @change="updateAnalytics" class="form-control form-control-sm">
+                  <option value="7d">Last 7 Days</option>
+                  <option value="30d">Last 30 Days</option>
+                  <option value="90d">Last 90 Days</option>
+                </select>
+              </div>
             </div>
             <div class="card-body">
-              <div class="mb-3">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                  <span class="text-muted">Current Balance</span>
-                  <span class="h4 mb-0 text-primary">{{ brandStats.balance }}</span>
-                </div>
-                <div class="progress mb-3" style="height: 8px;">
-                  <div class="progress-bar bg-primary" :style="{width: balancePercentage + '%'}"></div>
-                </div>
-                <small class="text-muted">{{ balancePercentage }}% of recommended balance</small>
-              </div>
-              
-              <div class="mb-3">
-                <label class="form-label">Top Up Amount</label>
-                <div class="input-group">
-                  <input type="number" class="form-control" v-model="topUpAmount" placeholder="Enter amount">
-                  <div class="input-group-append">
-                    <button class="btn btn-primary" @click="topUpBalance" :disabled="!topUpAmount || topUpAmount <= 0">
-                      Top Up
-                    </button>
-                  </div>
-                </div>
-              </div>
-              
-              <div class="alert alert-info">
-                <i class="fas fa-info-circle"></i>
-                <strong>Note:</strong> 1 balance = 15 seconds of ad display time
-              </div>
+              <canvas id="performanceChart" width="400" height="200"></canvas>
             </div>
           </div>
         </div>
-        
-        <div class="col-lg-8 col-md-12">
+        <div class="col-md-4">
           <div class="card">
             <div class="card-header">
-              <h4>Video Performance</h4>
-              <div class="card-header-action">
-                <div class="dropdown">
-                  <a href="#" data-toggle="dropdown" class="btn btn-warning dropdown-toggle">Period</a>
-                  <div class="dropdown-menu">
-                    <a href="#" class="dropdown-item" @click="changePeriod('7d')">Last 7 Days</a>
-                    <a href="#" class="dropdown-item" @click="changePeriod('30d')">Last 30 Days</a>
-                    <a href="#" class="dropdown-item" @click="changePeriod('90d')">Last 90 Days</a>
-                  </div>
-                </div>
-              </div>
+              <h4>Ad Type Performance</h4>
             </div>
             <div class="card-body">
-              <canvas id="performanceChart" height="100"></canvas>
+              <canvas id="adTypeChart" width="400" height="200"></canvas>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Video Management and Slot Assignment -->
-      <div class="row">
-        <div class="col-lg-8 col-md-12">
-          <div class="card">
-            <div class="card-header">
-              <h4>My Videos</h4>
-              <div class="card-header-action">
-                <a href="/brand/videos/upload" class="btn btn-primary">
-                  <i class="fas fa-plus"></i> Upload Video
-                </a>
-              </div>
-            </div>
-            <div class="card-body">
-              <div class="table-responsive">
-                <table class="table table-striped">
-                  <thead>
-                    <tr>
-                      <th>Video</th>
-                      <th>Type</th>
-                      <th>Duration</th>
-                      <th>Status</th>
-                      <th>Plays</th>
-                      <th>Last Played</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="video in brandVideos" :key="video.id">
-                      <td>
-                        <div class="d-flex align-items-center">
-                          <div class="avatar avatar-sm mr-2">
-                            <img :src="video.thumbnail || '/img/video-placeholder.png'" alt="Video Thumbnail">
-                          </div>
-                          <div>
-                            <div class="font-weight-600">{{ video.title }}</div>
-                            <div class="text-muted small">{{ video.filename }}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <span class="badge" :class="video.adType === 'perfume' ? 'badge-primary' : 'badge-success'">
-                          {{ video.adType }}
-                        </span>
-                      </td>
-                      <td>{{ formatDuration(video.durationSeconds) }}</td>
-                      <td>
-                        <span class="badge" :class="getStatusClass(video.status)">
-                          {{ video.status }}
-                        </span>
-                      </td>
-                      <td>{{ video.playCount || 0 }}</td>
-                      <td>{{ formatDate(video.lastPlayed) }}</td>
-                      <td>
-                        <div class="dropdown">
-                          <a href="#" data-toggle="dropdown" class="btn btn-sm btn-outline-primary dropdown-toggle">Actions</a>
-                          <div class="dropdown-menu">
-                            <a href="#" class="dropdown-item" @click="viewVideoDetails(video.id)">View Details</a>
-                            <a href="#" class="dropdown-item" @click="requestSlotAssignment(video.id)">Request Slot</a>
-                            <a href="#" class="dropdown-item" @click="editVideo(video.id)">Edit</a>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+      <!-- Video Performance Table -->
+      <div class="card">
+        <div class="card-header">
+          <h4>Your Video Performance</h4>
         </div>
-        
-        <div class="col-lg-4 col-md-12">
-          <div class="card">
-            <div class="card-header">
-              <h4>Slot Assignments</h4>
-            </div>
-            <div class="card-body">
-              <div class="list-group list-group-flush">
-                <div v-for="assignment in slotAssignments" :key="assignment.id" class="list-group-item px-0">
-                  <div class="d-flex justify-content-between align-items-start">
-                    <div class="flex-grow-1">
-                      <h6 class="mb-1">{{ assignment.video?.title }}</h6>
-                      <p class="mb-1 text-muted small">{{ assignment.slot?.name }}</p>
-                      <small class="text-muted">{{ assignment.slot?.startTime }} - {{ assignment.slot?.endTime }}</small>
+        <div class="card-body">
+          <table class="table table-striped">
+            <thead>
+              <tr>
+                <th>Video</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Total Plays</th>
+                <th>Total Spend</th>
+                <th>Avg. Cost/Play</th>
+                <th>Performance</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="video in videoAnalytics" :key="video.id">
+                <td>
+                  <div class="video-info">
+                    <strong>{{ video.title }}</strong>
+                    <div class="text-muted small">{{ formatDuration(video.duration_seconds) }}</div>
+                  </div>
+                </td>
+                <td>
+                  <span :class="getAdTypeBadgeClass(video.ad_type)" class="badge">
+                    {{ video.ad_type?.toUpperCase() }}
+                  </span>
+                </td>
+                <td>
+                  <span :class="getStatusBadgeClass(video.status)" class="badge">
+                    {{ video.status?.toUpperCase() }}
+                  </span>
+                </td>
+                <td>{{ formatNumber(video.total_plays) }}</td>
+                <td>{{ formatCurrency(video.total_spend) }}</td>
+                <td>{{ video.total_plays > 0 ? formatCurrency(video.total_spend / video.total_plays) : 'N/A' }}</td>
+                <td>
+                  <div class="performance-indicator">
+                    <div class="progress" style="height: 20px;">
+                      <div 
+                        class="progress-bar" 
+                        :class="getPerformanceClass(video.performance_score)"
+                        :style="{ width: Math.min(video.performance_score || 0, 100) + '%' }"
+                      >
+                        {{ Math.round(video.performance_score || 0) }}%
+                      </div>
                     </div>
-                    <span class="badge" :class="getAssignmentStatusClass(assignment.status)">
-                      {{ assignment.status }}
-                    </span>
                   </div>
-                </div>
-                <div v-if="slotAssignments.length === 0" class="text-center py-3 text-muted">
-                  <i class="fas fa-calendar-times fa-2x mb-2"></i>
-                  <p>No slot assignments yet</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div class="card mt-3">
-            <div class="card-header">
-              <h4>Quick Stats</h4>
-            </div>
-            <div class="card-body">
-              <div class="row">
-                <div class="col-6">
-                  <div class="text-center">
-                    <div class="h4 mb-0 text-primary">{{ brandStats.activeVideos }}</div>
-                    <small class="text-muted">Active Videos</small>
-                  </div>
-                </div>
-                <div class="col-6">
-                  <div class="text-center">
-                    <div class="h4 mb-0 text-success">{{ brandStats.avgPlaytime }}</div>
-                    <small class="text-muted">Avg. Playtime</small>
-                  </div>
-                </div>
-              </div>
-              <hr>
-              <div class="row">
-                <div class="col-6">
-                  <div class="text-center">
-                    <div class="h4 mb-0 text-warning">{{ brandStats.pendingAssignments }}</div>
-                    <small class="text-muted">Pending Slots</small>
-                  </div>
-                </div>
-                <div class="col-6">
-                  <div class="text-center">
-                    <div class="h4 mb-0 text-info">{{ brandStats.completedAssignments }}</div>
-                    <small class="text-muted">Completed</small>
-                  </div>
-                </div>
-              </div>
-            </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-if="videoAnalytics.length === 0" class="text-center py-4">
+            <p class="text-muted">No videos found. Contact admin to upload your advertisement videos.</p>
           </div>
         </div>
       </div>
 
       <!-- Recent Activity -->
-      <div class="row">
-        <div class="col-12">
-          <div class="card">
-            <div class="card-header">
-              <h4>Recent Activity</h4>
-            </div>
-            <div class="card-body">
-              <div class="activities">
-                <div v-for="activity in recentActivities" :key="activity.id" class="activity">
-                  <div class="activity-icon" :class="getActivityIconClass(activity.type)">
-                    <i :class="getActivityIcon(activity.type)"></i>
-                  </div>
-                  <div class="activity-detail">
-                    <div class="mb-2">
-                      <span class="text-job">{{ formatDate(activity.createdAt) }}</span>
-                      <span class="bullet"></span>
-                      <span class="text-job">{{ activity.type }}</span>
-                    </div>
-                    <p>{{ activity.description }}</p>
-                  </div>
-                </div>
-                <div v-if="recentActivities.length === 0" class="text-center py-3 text-muted">
-                  <i class="fas fa-history fa-2x mb-2"></i>
-                  <p>No recent activities</p>
-                </div>
+      <div class="card">
+        <div class="card-header">
+          <h4>Recent Activity</h4>
+        </div>
+        <div class="card-body">
+          <div class="timeline">
+            <div v-for="activity in recentActivities" :key="activity.id" class="timeline-item">
+              <div class="timeline-point" :class="getActivityPointClass(activity.type)"></div>
+              <div class="timeline-content">
+                <div class="timeline-time">{{ formatDateTime(activity.created_at) }}</div>
+                <div class="timeline-title">{{ activity.title }}</div>
+                <div class="timeline-body">{{ activity.description }}</div>
               </div>
+            </div>
+          </div>
+          <div v-if="recentActivities.length === 0" class="text-center py-3">
+            <p class="text-muted">No recent activity</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top Up Modal -->
+      <div v-if="isTopUpModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeTopUpModal">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Top Up Balance</h5>
+              <button type="button" class="btn-close" @click="closeTopUpModal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="text-center mb-4">
+                <h4>Current Balance</h4>
+                <h2 class="text-primary">{{ formatCurrency(brandInfo.balance) }}</h2>
+              </div>
+              <form @submit.prevent="submitTopUp">
+                <div class="form-group">
+                  <label>Top Up Amount</label>
+                  <div class="input-group">
+                    <span class="input-group-text">Rp</span>
+                    <input 
+                      type="text" 
+                      v-model="topUpAmountFormatted" 
+                      @input="handleAmountInput"
+                      class="form-control" 
+                      placeholder="Enter amount" 
+                      required 
+                    />
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label>Payment Method</label>
+                  <select v-model="paymentMethod" class="form-control">
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="credit_card">Credit Card</option>
+                    <option value="ewallet">E-Wallet</option>
+                  </select>
+                </div>
+                <div v-if="topUpAmount" class="alert alert-info">
+                  <i class="fas fa-info-circle mr-2"></i>
+                  New balance after top-up: <strong>{{ formatCurrency(brandInfo.balance + parseFloat(topUpAmount || 0)) }}</strong>
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-secondary" @click="closeTopUpModal">Cancel</button>
+                  <button type="submit" class="btn btn-primary">Top Up Balance</button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
@@ -288,334 +259,451 @@ definePageMeta({
   middleware: 'brand'
 })
 
-import { ref, onMounted, computed, nextTick } from 'vue'
-import { fetchWithAuth } from '~/utils/auth.js'
+import { ref, onMounted, nextTick } from 'vue';
+import { fetchWithAuth } from '~/utils/auth.js';
+import { useToast } from 'vue-toast-notification';
+import 'vue-toast-notification/dist/theme-sugar.css';
 
-const config = useRuntimeConfig()
-const apiUrl = `${config.public.apiBase}`
+const config = useRuntimeConfig();
+const apiUrl = `${config.public.apiBase}`;
+const $toast = useToast();
 
 // Reactive data
 const brandInfo = ref({
-  id: null,
   name: '',
-  type: ''
-})
-
-const brandStats = ref({
-  totalVideos: 0,
-  totalPlays: 0,
   balance: 0,
-  totalPlaytime: 0,
-  activeVideos: 0,
-  avgPlaytime: '0:00',
-  pendingAssignments: 0,
-  completedAssignments: 0
-})
+  email: '',
+  logo_url: ''
+});
 
-const brandVideos = ref([])
-const slotAssignments = ref([])
-const recentActivities = ref([])
-const performanceData = ref([])
-const topUpAmount = ref(null)
-const selectedPeriod = ref('7d')
+const analytics = ref({
+  total_plays: 0,
+  total_spend: 0,
+  active_videos: 0,
+  general_plays: 0,
+  perfume_plays: 0
+});
 
-// Chart instance
-let performanceChart = null
+const videoAnalytics = ref([]);
+const recentActivities = ref([]);
+const selectedPeriod = ref('30d');
 
-// Computed properties
-const balancePercentage = computed(() => {
-  const recommended = 1000 // Recommended balance
-  return Math.min((brandStats.value.balance / recommended) * 100, 100)
-})
+// Top-up modal
+const isTopUpModal = ref(false);
+const topUpAmount = ref('');
+const topUpAmountFormatted = ref('');
+const paymentMethod = ref('bank_transfer');
 
-// Fetch brand dashboard data
-const fetchBrandData = async () => {
+// Fetch brand information
+const fetchBrandInfo = async () => {
   try {
-    const accessToken = localStorage.getItem('access_token')
-    const headers = { 'Authorization': `Bearer ${accessToken}` }
-
-    // Fetch brand info and stats
-    const statsRes = await fetchWithAuth(`${apiUrl}/api/brand/dashboard`, { headers })
-    const statsData = await statsRes.json()
-    
-    if (statsData.success) {
-      brandInfo.value = statsData.data.brandInfo || {}
-      brandStats.value = {
-        ...brandStats.value,
-        ...statsData.data.stats
-      }
+    const accessToken = localStorage.getItem('access_token');
+    const response = await fetchWithAuth(`${apiUrl}/api/brand/profile`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    const data = await response.json();
+    if (data.success) {
+      brandInfo.value = data.data;
     }
-
-    // Fetch brand videos
-    const videosRes = await fetchWithAuth(`${apiUrl}/api/videos`, { headers })
-    const videosData = await videosRes.json()
-    
-    if (videosData.success) {
-      brandVideos.value = videosData.data || []
-    }
-
-    // Fetch slot assignments
-    const assignmentsRes = await fetchWithAuth(`${apiUrl}/api/slot-assignments`, { headers })
-    const assignmentsData = await assignmentsRes.json()
-    
-    if (assignmentsData.success) {
-      slotAssignments.value = assignmentsData.data || []
-    }
-
-    // Fetch performance data
-    const performanceRes = await fetchWithAuth(`${apiUrl}/api/analytics/brand/performance?period=${selectedPeriod.value}`, { headers })
-    const performanceDataRes = await performanceRes.json()
-    
-    if (performanceDataRes.success) {
-      performanceData.value = performanceDataRes.data.trend || []
-    }
-
-    // Fetch recent activities
-    const activitiesRes = await fetchWithAuth(`${apiUrl}/api/brand/activities`, { headers })
-    const activitiesData = await activitiesRes.json()
-    
-    if (activitiesData.success) {
-      recentActivities.value = activitiesData.data || []
-    }
-
   } catch (error) {
-    console.error('Error fetching brand data:', error)
+    console.error('Error fetching brand info:', error);
   }
-}
+};
 
-// Initialize performance chart
-const initPerformanceChart = async () => {
-  await nextTick()
-  
-  const ctx = document.getElementById('performanceChart')
-  if (ctx && window.Chart) {
-    if (performanceChart) {
-      performanceChart.destroy()
-    }
-    
-    performanceChart = new window.Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: performanceData.value.map(d => d.date),
-        datasets: [{
-          label: 'Video Plays',
-          data: performanceData.value.map(d => d.plays),
-          borderColor: '#6777ef',
-          backgroundColor: 'rgba(103, 119, 239, 0.1)',
-          tension: 0.4,
-          fill: true
-        }, {
-          label: 'Playtime (minutes)',
-          data: performanceData.value.map(d => d.playtime / 60),
-          borderColor: '#47c363',
-          backgroundColor: 'rgba(71, 195, 99, 0.1)',
-          tension: 0.4,
-          fill: true
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          y: {
-            beginAtZero: true
-          }
-        }
-      }
-    })
-  }
-}
-
-// Action handlers
-const topUpBalance = async () => {
+// Fetch analytics data
+const fetchAnalytics = async () => {
   try {
-    const accessToken = localStorage.getItem('access_token')
+    const accessToken = localStorage.getItem('access_token');
+    const response = await fetchWithAuth(`${apiUrl}/api/analytics/brand?period=${selectedPeriod.value}`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    const data = await response.json();
+    if (data.success) {
+      analytics.value = data.data;
+    }
+  } catch (error) {
+    console.error('Error fetching analytics:', error);
+  }
+};
+
+// Fetch video analytics
+const fetchVideoAnalytics = async () => {
+  try {
+    const accessToken = localStorage.getItem('access_token');
+    const response = await fetchWithAuth(`${apiUrl}/api/analytics/videos?period=${selectedPeriod.value}`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    const data = await response.json();
+    if (data.success) {
+      videoAnalytics.value = data.data || [];
+    }
+  } catch (error) {
+    console.error('Error fetching video analytics:', error);
+  }
+};
+
+// Fetch recent activities
+const fetchRecentActivities = async () => {
+  try {
+    const accessToken = localStorage.getItem('access_token');
+    const response = await fetchWithAuth(`${apiUrl}/api/analytics/activities?limit=10`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    const data = await response.json();
+    if (data.success) {
+      recentActivities.value = data.data || [];
+    }
+  } catch (error) {
+    console.error('Error fetching recent activities:', error);
+  }
+};
+
+// Update all analytics
+const updateAnalytics = async () => {
+  await fetchAnalytics();
+  await fetchVideoAnalytics();
+  await nextTick();
+  renderCharts();
+};
+
+// Render charts
+const renderCharts = () => {
+  renderPerformanceChart();
+  renderAdTypeChart();
+};
+
+const renderPerformanceChart = () => {
+  const canvas = document.getElementById('performanceChart');
+  if (!canvas) return;
+  
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  // Simple line chart implementation
+  ctx.strokeStyle = '#6777ef';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  
+  // Sample data - in real implementation, fetch from API
+  const data = [
+    { day: 'Mon', plays: 45 },
+    { day: 'Tue', plays: 52 },
+    { day: 'Wed', plays: 38 },
+    { day: 'Thu', plays: 65 },
+    { day: 'Fri', plays: 48 },
+    { day: 'Sat', plays: 72 },
+    { day: 'Sun', plays: 58 }
+  ];
+  
+  const maxPlays = Math.max(...data.map(d => d.plays));
+  
+  data.forEach((point, index) => {
+    const x = (index / (data.length - 1)) * canvas.width;
+    const y = canvas.height - (point.plays / maxPlays) * canvas.height * 0.8;
+    
+    if (index === 0) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
+  });
+  
+  ctx.stroke();
+};
+
+const renderAdTypeChart = () => {
+  const canvas = document.getElementById('adTypeChart');
+  if (!canvas) return;
+  
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  const total = analytics.value.general_plays + analytics.value.perfume_plays;
+  if (total === 0) return;
+  
+  let currentAngle = 0;
+  
+  // General ads slice
+  const generalAngle = (analytics.value.general_plays / total) * 2 * Math.PI;
+  ctx.beginPath();
+  ctx.arc(canvas.width / 2, canvas.height / 2, Math.min(canvas.width, canvas.height) / 3, currentAngle, currentAngle + generalAngle);
+  ctx.lineTo(canvas.width / 2, canvas.height / 2);
+  ctx.fillStyle = '#007bff';
+  ctx.fill();
+  
+  currentAngle += generalAngle;
+  
+  // Perfume ads slice
+  const perfumeAngle = (analytics.value.perfume_plays / total) * 2 * Math.PI;
+  ctx.beginPath();
+  ctx.arc(canvas.width / 2, canvas.height / 2, Math.min(canvas.width, canvas.height) / 3, currentAngle, currentAngle + perfumeAngle);
+  ctx.lineTo(canvas.width / 2, canvas.height / 2);
+  ctx.fillStyle = '#28a745';
+  ctx.fill();
+};
+
+// Top-up functions
+const showTopUpModal = () => {
+  isTopUpModal.value = true;
+  topUpAmount.value = '';
+  topUpAmountFormatted.value = '';
+  paymentMethod.value = 'bank_transfer';
+};
+
+const closeTopUpModal = () => {
+  isTopUpModal.value = false;
+  topUpAmount.value = '';
+  topUpAmountFormatted.value = '';
+  paymentMethod.value = 'bank_transfer';
+};
+
+const handleAmountInput = (event) => {
+  const value = event.target.value.replace(/[^0-9]/g, '');
+  topUpAmount.value = value;
+  topUpAmountFormatted.value = value ? parseInt(value).toLocaleString('id-ID') : '';
+};
+
+const submitTopUp = async () => {
+  if (!topUpAmount.value || parseFloat(topUpAmount.value) <= 0) {
+    $toast.error('Please enter a valid amount', { duration: 5000, position: 'top-right' });
+    return;
+  }
+
+  try {
+    const accessToken = localStorage.getItem('access_token');
     const response = await fetchWithAuth(`${apiUrl}/api/balance/topup`, {
       method: 'POST',
       headers: {
+        'Content-Type': 'application/json',
         'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ 
+      body: JSON.stringify({
         amount: parseFloat(topUpAmount.value),
-        reference: `Top-up-${Date.now()}`
+        payment_method: paymentMethod.value
       })
-    })
+    });
     
-    const data = await response.json()
+    const data = await response.json();
     if (data.success) {
-      brandStats.value.balance = data.data.newBalance
-      topUpAmount.value = null
-      // Refresh the dashboard data to show updated balance
-      await fetchBrandData()
-      // Show success message (you can add a toast notification here)
-      console.log('Balance topped up successfully!')
+      $toast.success('Top-up request submitted successfully!', { duration: 5000, position: 'top-right' });
+      closeTopUpModal();
+      await fetchBrandInfo();
     } else {
-      console.error('Top-up failed:', data.error)
+      $toast.error(data.message || 'Failed to submit top-up request', { duration: 5000, position: 'top-right' });
     }
   } catch (error) {
-    console.error('Error topping up balance:', error)
+    $toast.error('Failed to submit top-up request', { duration: 5000, position: 'top-right' });
   }
-}
-
-const changePeriod = async (period) => {
-  selectedPeriod.value = period
-  await fetchBrandData()
-  await initPerformanceChart()
-}
-
-const viewVideoDetails = (videoId) => {
-  navigateTo(`/brand/videos/${videoId}`)
-}
-
-const requestSlotAssignment = (videoId) => {
-  navigateTo(`/brand/slot-requests/create?video_id=${videoId}`)
-}
-
-const editVideo = (videoId) => {
-  navigateTo(`/brand/videos/${videoId}/edit`)
-}
+};
 
 // Utility functions
+const formatNumber = (num) => {
+  return new Intl.NumberFormat().format(num || 0);
+};
+
+const formatCurrency = (amount) => {
+  const numAmount = parseFloat(amount) || 0;
+  return `Rp${Math.round(numAmount).toLocaleString('id-ID')}`;
+};
+
 const formatDuration = (seconds) => {
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
-  return `${mins}:${secs.toString().padStart(2, '0')}`
-}
+  if (!seconds) return '0:00';
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
 
-const formatDate = (dateString) => {
-  if (!dateString) return 'Never'
-  return new Date(dateString).toLocaleString('id-ID', { 
-    timeZone: 'Asia/Jakarta',
-    dateStyle: 'short',
-    timeStyle: 'short'
-  })
-}
+const formatDateTime = (dateString) => {
+  if (!dateString) return 'N/A';
+  const date = new Date(dateString);
+  return date.toLocaleString();
+};
 
-const getStatusClass = (status) => {
-  switch (status) {
-    case 'active': return 'badge-success'
-    case 'pending': return 'badge-warning'
-    case 'inactive': return 'badge-secondary'
-    default: return 'badge-light'
-  }
-}
+const getBalanceCardClass = () => {
+  if (brandInfo.value.balance < 10000) return 'bg-danger';
+  if (brandInfo.value.balance < 100000) return 'bg-warning';
+  return 'bg-info';
+};
 
-const getAssignmentStatusClass = (status) => {
-  switch (status) {
-    case 'approved': return 'badge-success'
-    case 'pending': return 'badge-warning'
-    case 'rejected': return 'badge-danger'
-    default: return 'badge-light'
-  }
-}
-
-const getActivityIconClass = (type) => {
+const getAdTypeBadgeClass = (type) => {
   switch (type) {
-    case 'video_upload': return 'bg-primary'
-    case 'slot_request': return 'bg-warning'
-    case 'balance_topup': return 'bg-success'
-    case 'video_play': return 'bg-info'
-    default: return 'bg-secondary'
+    case 'general': return 'badge-primary';
+    case 'perfume': return 'badge-success';
+    default: return 'badge-secondary';
   }
-}
+};
 
-const getActivityIcon = (type) => {
-  switch (type) {
-    case 'video_upload': return 'fas fa-upload'
-    case 'slot_request': return 'fas fa-calendar-plus'
-    case 'balance_topup': return 'fas fa-coins'
-    case 'video_play': return 'fas fa-play'
-    default: return 'fas fa-info'
+const getStatusBadgeClass = (status) => {
+  switch (status) {
+    case 'approved': return 'badge-success';
+    case 'pending': return 'badge-warning';
+    case 'rejected': return 'badge-danger';
+    default: return 'badge-secondary';
   }
-}
+};
+
+const getPerformanceClass = (score) => {
+  if (score >= 80) return 'bg-success';
+  if (score >= 60) return 'bg-warning';
+  return 'bg-danger';
+};
+
+const getActivityPointClass = (type) => {
+  switch (type) {
+    case 'play': return 'bg-primary';
+    case 'topup': return 'bg-success';
+    case 'video_approved': return 'bg-info';
+    case 'video_rejected': return 'bg-danger';
+    default: return 'bg-secondary';
+  }
+};
 
 // Lifecycle
 onMounted(async () => {
-  await fetchBrandData()
-  setTimeout(initPerformanceChart, 500)
-})
+  await fetchBrandInfo();
+  await fetchAnalytics();
+  await fetchVideoAnalytics();
+  await fetchRecentActivities();
+  await nextTick();
+  renderCharts();
+});
 </script>
 
 <style scoped>
 .card-statistic-1 {
-  display: flex;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.card-icon {
-  font-size: 2rem;
-  padding: 20px;
-  color: #fff;
-  border-radius: 5px 0 0 5px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 70px;
-}
-
-.bg-primary { background: #6777ef; }
-.bg-success { background: #47c363; }
-.bg-warning { background: #ffa426; }
-.bg-info { background: #3abaf4; }
-
-.avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
+  position: relative;
   overflow: hidden;
+  margin-bottom: 1.5rem;
 }
 
-.avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.activities .activity {
-  display: flex;
-  margin-bottom: 20px;
-}
-
-.activity-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
+.card-statistic-1 .card-icon {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 80px;
+  height: 80px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  margin-right: 15px;
-  flex-shrink: 0;
+  font-size: 2rem;
+  border-radius: 0 0 0 100%;
 }
 
-.activity-detail {
-  flex: 1;
+.card-statistic-1 .card-wrap {
+  padding: 1.5rem 1.5rem 1.5rem 7rem;
 }
 
-.text-job {
+.card-statistic-1 .card-header h4 {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #6c757d;
+  text-transform: uppercase;
+}
+
+.card-statistic-1 .card-body {
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin: 0;
+}
+
+.video-info {
+  min-width: 200px;
+}
+
+.performance-indicator {
+  min-width: 100px;
+}
+
+.timeline {
+  position: relative;
+  padding-left: 30px;
+}
+
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background-color: #e9ecef;
+}
+
+.timeline-item {
+  position: relative;
+  margin-bottom: 20px;
+}
+
+.timeline-point {
+  position: absolute;
+  left: -22px;
+  top: 5px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+}
+
+.timeline-content {
+  background-color: #f8f9fa;
+  padding: 10px 15px;
+  border-radius: 5px;
+}
+
+.timeline-time {
+  font-size: 0.75rem;
+  color: #6c757d;
+  margin-bottom: 5px;
+}
+
+.timeline-title {
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+.timeline-body {
   font-size: 0.875rem;
   color: #6c757d;
 }
 
-.bullet {
-  display: inline-block;
-  width: 4px;
-  height: 4px;
-  background: #6c757d;
-  border-radius: 50%;
-  margin: 0 8px;
-  vertical-align: middle;
-}
-
-.progress {
-  background-color: #e9ecef;
-  border-radius: 0.25rem;
-}
-
 .badge {
   font-size: 0.75rem;
-  padding: 0.25rem 0.5rem;
+  padding: 0.375rem 0.75rem;
+}
+
+.badge-primary { background-color: #007bff; }
+.badge-success { background-color: #28a745; }
+.badge-warning { background-color: #ffc107; color: #212529; }
+.badge-danger { background-color: #dc3545; }
+.badge-info { background-color: #17a2b8; }
+.badge-secondary { background-color: #6c757d; }
+
+.bg-primary { background-color: #007bff; }
+.bg-success { background-color: #28a745; }
+.bg-warning { background-color: #ffc107; }
+.bg-danger { background-color: #dc3545; }
+.bg-info { background-color: #17a2b8; }
+.bg-secondary { background-color: #6c757d; }
+
+.modal {
+  z-index: 1050;
+}
+
+.btn-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #000;
+  opacity: 0.5;
+}
+
+.btn-close:hover {
+  opacity: 0.75;
+}
+
+canvas {
+  max-height: 300px;
 }
 </style>

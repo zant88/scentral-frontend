@@ -233,7 +233,7 @@ const formatFileSize = (bytes) => {
 };
 
 const getVideoUrl = (filePath) => {
-  return `${apiUrl}/uploads/videos/${filePath}`;
+  return `${apiUrl}${filePath}`;
 };
 
 const onFileChange = (event) => {

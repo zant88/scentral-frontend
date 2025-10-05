@@ -8,164 +8,260 @@
       </div>
     </div>
     <div class="section-body">
-      <h2 class="section-title">Advertising Video Management</h2>
-      <p class="section-lead">Upload, manage, and assign advertising videos to slots</p>
-      
-      <!-- Video Statistics -->
-      <div class="row">
-        <div class="col-lg-3 col-md-6 col-sm-6 col-12">
-          <div class="card card-statistic-1">
-            <div class="card-icon bg-primary"><i class="fas fa-video"></i></div>
-            <div class="card-wrap">
-              <div class="card-header"><h4>Total Videos</h4></div>
-              <div class="card-body">{{ videoStats.totalVideos }}</div>
+      <h2 class="section-title">Advertisement Videos</h2>
+      <p class="section-lead">
+        Manage advertisement videos for the vending machine system.
+      </p>
+      <div class="card" v-if="!isCreateUpdate">
+        <div class="card-header actionable">
+          <client-only>
+            <div class="left-action">
+              <input class="check-all" type="checkbox" @change="toggleAll" />
+              <a href="#" class="btn btn-icon btn-danger note-btn" @click="deleteItem" v-if="anyChecked" data-toggle="tooltip"
+                title="Delete Selected"><i class="fa fa-trash"></i></a>
+              <a href="javascript:void(0)" @click="navigateTo('/admin/videos/create')" class="btn btn-icon btn-primary note-btn" data-toggle="tooltip"
+                title="Upload New"><i class="fas fa-plus"></i></a>
             </div>
+          </client-only>
+          <div class="right-action">
+            <input type="search" v-model="querySearch" @keyup.enter="getVideoList" class="form-control" placeholder="Type then press enter" />
           </div>
         </div>
-        <div class="col-lg-3 col-md-6 col-sm-6 col-12">
-          <div class="card card-statistic-1">
-            <div class="card-icon bg-success"><i class="fas fa-leaf"></i></div>
-            <div class="card-wrap">
-              <div class="card-header"><h4>Perfume Videos</h4></div>
-              <div class="card-body">{{ videoStats.perfumeVideos }}</div>
+        <div class="card-body">
+          <div class="row mb-3">
+            <div class="col-md-3">
+              <select v-model="filterBrand" @change="getVideoList" class="form-control">
+                <option value="">All Brands</option>
+                <option v-for="brand in brands" :key="brand.id" :value="brand.id">
+                  {{ brand.name }}
+                </option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <select v-model="filterType" @change="getVideoList" class="form-control">
+                <option value="">All Types</option>
+                <option value="general">General Ads</option>
+                <option value="perfume">Perfume Ads</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <select v-model="filterStatus" @change="getVideoList" class="form-control">
+                <option value="">All Status</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <select v-model="sortBy" @change="getVideoList" class="form-control">
+                <option value="created_at">Sort by Created</option>
+                <option value="title">Sort by Title</option>
+                <option value="duration_seconds">Sort by Duration</option>
+                <option value="cost_per_play">Sort by Cost</option>
+              </select>
             </div>
           </div>
-        </div>
-        <div class="col-lg-3 col-md-6 col-sm-6 col-12">
-          <div class="card card-statistic-1">
-            <div class="card-icon bg-warning"><i class="fas fa-tv"></i></div>
-            <div class="card-wrap">
-              <div class="card-header"><h4>General Videos</h4></div>
-              <div class="card-body">{{ videoStats.generalVideos }}</div>
-            </div>
-          </div>
-        </div>
-        <div class="col-lg-3 col-md-6 col-sm-6 col-12">
-          <div class="card card-statistic-1">
-            <div class="card-icon bg-info"><i class="fas fa-play"></i></div>
-            <div class="card-wrap">
-              <div class="card-header"><h4>Active Videos</h4></div>
-              <div class="card-body">{{ videoStats.activeVideos }}</div>
-            </div>
+          <table class="table table-striped">
+            <thead>
+              <tr>
+                <th scope="col">&nbsp;</th>
+                <th class="number-cell" scope="col">#</th>
+                <th scope="col">Title</th>
+                <th scope="col">Brand</th>
+                <th scope="col">Type</th>
+                <th scope="col">Duration</th>
+                <th scope="col">Cost/Play</th>
+                <th scope="col">Status</th>
+                <th scope="col">Priority</th>
+                <th scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(item, i) in videoList" :key="item.id">
+                <td class="checkbox"><input type="checkbox" v-model="checkedItems" :value="item.id" /></td>
+                <td scope="row">{{ i + 1 }}</td>
+                <td>
+                  <div class="video-title">
+                    <strong>{{ item.title }}</strong>
+                    <div class="video-description text-muted small">{{ item.description || 'No description' }}</div>
+                  </div>
+                </td>
+                <td>{{ item.brand?.name || 'N/A' }}</td>
+                <td>
+                  <span :class="getAdTypeBadgeClass(item.ad_type)" class="badge">
+                    {{ item.ad_type?.toUpperCase() || 'N/A' }}
+                  </span>
+                </td>
+                <td>{{ item.duration_seconds }}</td>
+                <td>{{ item.cost_per_play || 0 }} balance</td>
+                <td>
+                  <span :class="getStatusBadgeClass(item.status)" class="badge">
+                    {{ item.status?.toUpperCase() || 'UNKNOWN' }}
+                  </span>
+                </td>
+                <td>
+                  <span :class="getPriorityBadgeClass(item.priority)" class="badge">
+                    {{ item.priority?.toUpperCase() || 'MEDIUM' }}
+                  </span>
+                </td>
+                <td class="actions-cell">
+                  <div class="btn-group">
+                    <button @click="playVideo(item)" class="btn btn-sm btn-info" title="Play Video">
+                      <i class="fas fa-play"></i>
+                    </button>
+                    <button @click="navigateTo(`/admin/videos/update/${item.id}`)" class="btn btn-sm btn-warning" title="Edit">
+                      <i class="fas fa-edit"></i>
+                    </button>
+                    <button 
+                      v-if="item.status === 'active'" 
+                      @click="deactivateVideo(item)" 
+                      class="btn btn-sm btn-danger" 
+                      title="Inactivate"
+                    >
+                      <i class="fas fa-times"></i>
+                    </button>
+                    <button 
+                      v-if="item.status === 'inactive'" 
+                      @click="activateVideo(item)" 
+                      class="btn btn-sm btn-success" 
+                      title="Activate"
+                    >
+                      <i class="fas fa-check"></i>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-if="videoList.length === 0" class="text-center py-4">
+            <p class="text-muted">No videos found</p>
           </div>
         </div>
       </div>
 
-      <!-- Video Library -->
-      <div class="row">
-        <div class="col-12">
-          <div class="card">
-            <div class="card-header actionable">
-              <div class="left-action">
-                <button class="btn btn-icon btn-primary note-btn" @click="goToCreatePage" style="cursor: pointer;"><i class="fas fa-plus"></i></button>
+      <!-- Create/Update Form -->
+      <div class="card" v-if="isCreateUpdate">
+        <div class="card-header">
+          <h4>{{ isEdited ? 'Edit' : 'Add' }} Video</h4>
+        </div>
+        <div class="card-body">
+          <form @submit.prevent="submitForm" class="needs-validation" novalidate>
+            <div class="row">
+              <div class="col-12 col-md-6">
+                <div class="form-group">
+                  <label>Video Title *</label>
+                  <input type="text" v-model="videoTitle" class="form-control" required />
+                  <div class="invalid-feedback">
+                    Please provide a video title.
+                  </div>
+                </div>
               </div>
-              <div class="right-action">
-                <div class="input-group">
-                  <select class="form-control" v-model="filterType">
-                    <option value="">All Types</option>
-                    <option value="perfume">Perfume</option>
-                    <option value="general">General</option>
+              <div class="col-12 col-md-6">
+                <div class="form-group">
+                  <label>Brand *</label>
+                  <select v-model="videoBrand" class="form-control" required>
+                    <option value="">Select Brand</option>
+                    <option v-for="brand in brands" :key="brand.id" :value="brand.id">
+                      {{ brand.name }}
+                    </option>
                   </select>
-                  <select class="form-control ml-2" v-model="filterStatus">
-                    <option value="">All Status</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                    <option value="pending">Pending</option>
-                  </select>
-                  <input type="text" class="form-control ml-2" placeholder="Search videos..." v-model="searchQuery">
-                  <div class="input-group-btn">
-                    <button class="btn btn-primary"><i class="fas fa-search"></i></button>
+                  <div class="invalid-feedback">
+                    Please select a brand.
                   </div>
                 </div>
               </div>
             </div>
-            <div class="card-body p-0">
-              <div class="table-responsive">
-                <table class="table table-striped">
-                  <thead>
-                    <tr>
-                      <th>Video</th>
-                      <th>Brand</th>
-                      <th>Type</th>
-                      <th>Duration</th>
-                      <th>Cost</th>
-                      <th>Status</th>
-                    <th>Slot Assignment</th>
-                    <th>Plays</th>
-                    <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="video in filteredVideos" :key="video.id">
-                      <td>
-                        <div class="d-flex align-items-center">
-                          <div class="video-thumbnail mr-3">
-                            <video v-if="video.file_path" :src="getVideoUrl(video.file_path)" class="thumbnail-video" muted></video>
-                            <div v-else class="thumbnail-placeholder">
-                              <i class="fas fa-video"></i>
-                            </div>
-                          </div>
-                          <div>
-                            <div class="font-weight-600">{{ video.title }}</div>
-                            <div class="text-muted small">{{ video.description }}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <div class="font-weight-600">{{ getBrandName(video) }}</div>
-                        <div class="text-muted small">ID: {{ video.brand_id }}</div>
-                      </td>
-                      <td>
-                        <span class="badge" :class="video.ad_type === 'perfume' ? 'badge-primary' : 'badge-success'">
-                          {{ video.ad_type }}
-                        </span>
-                      </td>
-                      <td>
-                        <div>{{ formatDuration(video.duration_seconds) }}</div>
-                        <div class="text-muted small">{{ video.duration_seconds }}s</div>
-                      </td>
-                      <td>
-                        <div class="font-weight-600">{{ Math.ceil(video.duration_seconds / 15) }}</div>
-                        <div class="text-muted small">balance</div>
-                      </td>
-                      <td>
-                        <span class="badge" :class="getStatusClass(video.status)">
-                          {{ video.status }}
-                        </span>
-                      </td>
-                      <td>
-                        <div v-if="video.slot_assignments && video.slot_assignments.length > 0">
-                          <div v-for="assignment in video.slot_assignments" :key="assignment.id" class="mb-1">
-                            <small class="badge badge-info">
-                              <i class="fas fa-calendar mr-1"></i>
-                              {{ assignment.slot ? assignment.slot.name : `Slot ${assignment.slot_id}` }}
-                            </small>
-                          </div>
-                        </div>
-                        <small v-else class="text-muted">Not assigned</small>
-                      </td>
-                      <td>
-                        <div class="text-center">
-                          <div class="font-weight-600">{{ video.playCount || 0 }}</div>
-                          <div class="text-muted small">plays</div>
-                        </div>
-                      </td>
-                      <td>
-                        <div class="dropdown">
-                          <a href="#" data-toggle="dropdown" class="btn btn-sm btn-outline-primary dropdown-toggle">Actions</a>
-                          <div class="dropdown-menu">
-                            <NuxtLink :to="`/admin/videos/update/${video.id}`" class="dropdown-item">Edit</NuxtLink>
-                            <a href="#" class="dropdown-item" @click="previewVideo(video)">Preview</a>
-                            <a href="#" class="dropdown-item" @click="assignToSlot(video)">Assign to Slot</a>
-                            <a href="#" class="dropdown-item" @click="viewAnalytics(video.id)">View Analytics</a>
-                            <div class="dropdown-divider"></div>
-                            <a href="#" class="dropdown-item text-danger" @click="deleteVideo(video.id)">Delete</a>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+            <div class="row">
+              <div class="col-12 col-md-4">
+                <div class="form-group">
+                  <label>Ad Type *</label>
+                  <select v-model="videoType" class="form-control" required>
+                    <option value="">Select Type</option>
+                    <option value="general">General Ad</option>
+                    <option value="perfume">Perfume Ad</option>
+                  </select>
+                  <div class="invalid-feedback">
+                    Please select an ad type.
+                  </div>
+                </div>
+              </div>
+              <div class="col-12 col-md-4">
+                <div class="form-group">
+                  <label>Status *</label>
+                  <select v-model="videoStatus" class="form-control" required>
+                    <option value="">Select Status</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                  <div class="invalid-feedback">
+                    Please select a status.
+                  </div>
+                </div>
+              </div>
+              <div class="col-12 col-md-4">
+                <div class="form-group">
+                  <label>Priority</label>
+                  <select v-model="videoPriority" class="form-control">
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="col-12 col-md-6">
+                <div class="form-group">
+                  <label>Duration (seconds)</label>
+                  <input type="number" v-model="videoDuration" class="form-control" min="1" />
+                </div>
+              </div>
+              <div class="col-12 col-md-6">
+                <div class="form-group">
+                  <label>Cost per Play</label>
+                  <input type="number" v-model="videoCost" class="form-control" min="0" />
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="col-12">
+                <div class="form-group">
+                  <label>Description</label>
+                  <textarea v-model="videoDescription" class="form-control" rows="4"></textarea>
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <button type="submit" class="btn btn-primary">{{ isEdited ? 'Update' : 'Create' }}</button>
+              <button type="button" @click="isCreateUpdate = false" class="btn btn-secondary ml-2">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Video Player Modal -->
+      <div v-if="isVideoModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeVideoModal">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">{{ currentVideo?.title }}</h5>
+              <button type="button" class="btn-close" @click="closeVideoModal"></button>
+            </div>
+            <div class="modal-body">
+              <video
+                v-if="currentVideo"
+                :src="getVideoSrc(currentVideo.file_path)"
+                controls
+                class="w-100"
+                @error="onVideoError"
+              >
+                Your browser does not support the video tag.
+              </video>
+              <div v-if="currentVideo" class="mt-3">
+                <p><strong>Brand:</strong> {{ currentVideo.brand?.name || 'N/A' }}</p>
+                <p><strong>Type:</strong> {{ currentVideo.ad_type?.toUpperCase() || 'N/A' }}</p>
+                <p><strong>Duration:</strong> {{ formatDuration(currentVideo.duration_seconds) }}</p>
+                <p><strong>Cost per Play:</strong> {{ currentVideo.cost_per_play || 0 }} balance</p>
+                <p><strong>Description:</strong> {{ currentVideo.description || 'No description' }}</p>
               </div>
             </div>
           </div>
@@ -173,761 +269,407 @@
       </div>
     </div>
   </section>
-
-  <!-- Video Preview Modal -->
-  <div v-if="showPreviewModal" class="modal-overlay" @click.self="closePreviewModal">
-    <div class="modal-dialog modal-lg" @click.stop>
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title">Video Preview</h5>
-          <button type="button" class="close-btn" @click="closePreviewModal">
-            <span>&times;</span>
-          </button>
-        </div>
-        <div class="modal-body text-center">
-          <div v-if="previewVideoData" class="video-container">
-            <div v-if="!videoError">
-              <video 
-                id="previewVideoElement"
-                class="preview-video" 
-                controls 
-                preload="metadata"
-                @error="handleVideoError"
-                @loadstart="handleVideoLoadStart"
-                @canplay="handleVideoCanPlay"
-              >
-                <source :src="getVideoUrl(previewVideoData.file_path)" type="video/mp4">
-                <source :src="getVideoUrl(previewVideoData.file_path)" type="video/webm">
-                <source :src="getVideoUrl(previewVideoData.file_path)" type="video/ogg">
-                Your browser does not support the video tag.
-              </video>
-            </div>
-            
-            <div v-if="videoError" class="video-error">
-              <i class="fas fa-exclamation-triangle"></i>
-              <p>Unable to load video</p>
-              <p>Please check if the video file exists and is accessible.</p>
-              <small>{{ getVideoUrl(previewVideoData.file_path) }}</small>
-            </div>
-            
-            <div v-if="videoLoading && !videoError" class="text-center p-4">
-              <div class="spinner-border" role="status">
-                <span class="sr-only">Loading...</span>
-              </div>
-              <p class="mt-2">Loading video...</p>
-            </div>
-          </div>
-          <div class="mt-3" v-if="previewVideoData">
-            <h6>{{ previewVideoData.title }}</h6>
-            <p class="text-muted">{{ previewVideoData.description }}</p>
-            <div class="row">
-              <div class="col-md-4">
-                <strong>Duration:</strong> {{ formatDuration(previewVideoData.duration_seconds) }}
-              </div>
-              <div class="col-md-4">
-                <strong>Cost:</strong> {{ Math.ceil((previewVideoData.duration_seconds || 0) / 15) }} balance
-              </div>
-              <div class="col-md-4">
-                <strong>Brand:</strong> {{ getBrandName(previewVideoData) }}
-              </div>
-            </div>
-            <div class="row mt-2">
-              <div class="col-12">
-                <strong>File Path:</strong> <small class="text-muted">{{ previewVideoData.file_path || 'N/A' }}</small>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Slot Assignment Modal -->
-  <div v-if="showSlotAssignmentModal" class="modal-overlay" @click="closeSlotAssignmentModal">
-    <div class="modal-dialog" @click.stop>
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title">Assign Video to Slot</h5>
-          <button type="button" class="close-btn" @click="closeSlotAssignmentModal">
-            <i class="fas fa-times"></i>
-          </button>
-        </div>
-        <div class="modal-body">
-          <div v-if="selectedVideoForSlot" class="mb-4">
-            <h6 class="text-muted mb-2">Selected Video:</h6>
-            <div class="d-flex align-items-center">
-              <div class="video-thumbnail mr-3">
-                <i class="fas fa-play thumbnail-placeholder"></i>
-              </div>
-              <div>
-                <div class="font-weight-bold">{{ selectedVideoForSlot.title }}</div>
-                <small class="text-muted">{{ selectedVideoForSlot.description }}</small>
-              </div>
-            </div>
-          </div>
-
-          <form @submit.prevent="submitSlotAssignment">
-            <div class="form-group">
-              <label for="slotSelect">Select Slot *</label>
-              <select 
-                id="slotSelect" 
-                v-model="slotAssignmentForm.slotId" 
-                class="form-control" 
-                :disabled="loadingSlots"
-                required
-              >
-                <option value="">{{ loadingSlots ? 'Loading slots...' : 'Choose a slot' }}</option>
-                <option 
-                  v-for="slot in availableSlots" 
-                  :key="slot.id || slot.ID" 
-                  :value="slot.id || slot.ID"
-                >
-                  {{ slot.name }} 
-                  <span v-if="slot.machine_name">({{ slot.machine_name }})</span>
-                  - {{ slot.perfume_seconds }}s perfume, {{ slot.general_seconds }}s general
-                </option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label for="prioritySelect">Priority</label>
-              <select id="prioritySelect" v-model="slotAssignmentForm.priority" class="form-control">
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-              </select>
-            </div>
-
-            <div class="row">
-              <div class="col-md-6">
-                <div class="form-group">
-                  <label for="startDate">Start Date (Optional)</label>
-                  <input 
-                    id="startDate" 
-                    v-model="slotAssignmentForm.startDate" 
-                    type="date" 
-                    class="form-control"
-                  >
-                </div>
-              </div>
-              <div class="col-md-6">
-                <div class="form-group">
-                  <label for="endDate">End Date (Optional)</label>
-                  <input 
-                    id="endDate" 
-                    v-model="slotAssignmentForm.endDate" 
-                    type="date" 
-                    class="form-control"
-                  >
-                </div>
-              </div>
-            </div>
-
-            <div class="d-flex justify-content-end">
-              <button 
-                type="button" 
-                class="btn btn-secondary mr-2" 
-                @click="closeSlotAssignmentModal"
-                :disabled="assigningToSlot"
-              >
-                Cancel
-              </button>
-              <button 
-                type="submit" 
-                class="btn btn-primary" 
-                :disabled="assigningToSlot || !slotAssignmentForm.slotId"
-              >
-                <i v-if="assigningToSlot" class="fas fa-spinner fa-spin mr-2"></i>
-                {{ assigningToSlot ? 'Assigning...' : 'Assign to Slot' }}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  </div>
-
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
-import { fetchWithAuth } from '~/utils/auth.js'
-
 definePageMeta({
-  middleware: 'auth'
+  middleware: 'admin'
 })
 
-const config = useRuntimeConfig()
-const apiUrl = `${config.public.apiBase}`
+import { ref, computed, onMounted } from 'vue';
+import Swal from 'sweetalert2';
+import { fetchWithAuth } from '~/utils/auth.js';
+import { useToast } from 'vue-toast-notification';
+import 'vue-toast-notification/dist/theme-sugar.css';
 
-// Reactive data
-const videos = ref([])
-const brands = ref([])
-const searchQuery = ref('')
-const filterType = ref('')
-const filterStatus = ref('')
-const editingVideo = ref(null)
-const uploading = ref(false)
-const saving = ref(false)
-const selectedFile = ref(null)
-const selectedFileName = ref('')
-const previewVideoData = ref(null)
-const showPreviewModal = ref(false)
-const videoError = ref(false)
-const videoLoading = ref(false)
+const config = useRuntimeConfig();
+const apiUrl = `${config.public.apiBase}`;
+const checkedItems = ref([]);
+const videoList = ref([]);
+const brands = ref([]);
+const isCreateUpdate = ref(false);
+const isEdited = ref(false);
+const isVideoModal = ref(false);
+const currentVideo = ref(null);
+const $toast = useToast();
+const querySearch = ref('');
+const filterBrand = ref('');
+const filterType = ref('');
+const filterStatus = ref('');
+const sortBy = ref('created_at');
+const anyChecked = computed(() => checkedItems.value.length > 0);
 
-const videoStats = ref({
-  totalVideos: 0,
-  perfumeVideos: 0,
-  generalVideos: 0,
-  activeVideos: 0
-})
+// Form variables
+const videoTitle = ref('');
+const videoDescription = ref('');
+const videoBrand = ref('');
+const videoType = ref('');
+const videoStatus = ref('');
+const videoPriority = ref('medium');
+const videoDuration = ref(0);
+const videoCost = ref(0);
+const videoID = ref(null);
 
-const videoForm = ref({
-  title: '',
-  description: '',
-  brandId: '',
-  adType: '',
-  durationSeconds: 0,
-  priority: 'medium',
-  status: 'active',
-  autoAssign: false,
-  skipBalanceCheck: false
-})
-
-// Computed properties
-const filteredVideos = computed(() => {
-  let filtered = videos.value
-  
-  if (filterType.value) {
-    filtered = filtered.filter(video => video.adType === filterType.value)
-  }
-  
-  if (filterStatus.value) {
-    filtered = filtered.filter(video => video.status === filterStatus.value)
-  }
-  
-  if (searchQuery.value) {
-    const query = searchQuery.value.toLowerCase()
-    filtered = filtered.filter(video => 
-      video.title.toLowerCase().includes(query) ||
-      video.description.toLowerCase().includes(query)
-    )
-  }
-  
-  return filtered
-})
-
-// Fetch data
-const fetchVideos = async () => {
-  try {
-    const accessToken = localStorage.getItem('access_token')
-    const response = await fetchWithAuth(`${apiUrl}/api/video?include_assignments=true`, {
-      headers: { 'Authorization': `Bearer ${accessToken}` }
-    })
-    
-    const data = await response.json()
-    if (data.success) {
-      videos.value = data.data || []
-      calculateStats()
-    }
-  } catch (error) {
-    console.error('Error fetching videos:', error)
+const toggleAll = (event) => {
+  if (event.target.checked) {
+    checkedItems.value = videoList.value.map(v => v.id);
+  } else {
+    checkedItems.value = [];
   }
 }
 
-const fetchBrands = async () => {
+const getVideoList = async () => {
+  const accessToken = localStorage.getItem('access_token');
+  let url = `${apiUrl}/api/video/`;
+  const params = new URLSearchParams();
+
+  console.log('Token used:', accessToken); // Debugging line
+  
+  if (querySearch.value) params.append('search', querySearch.value);
+  if (filterBrand.value) params.append('brand_id', filterBrand.value);
+  if (filterType.value) params.append('ad_type', filterType.value);
+  if (filterStatus.value) params.append('status', filterStatus.value);
+  if (sortBy.value) params.append('sort_by', sortBy.value);
+  
+  if (params.toString()) {
+    url += '?' + params.toString();
+  }
+  
   try {
-    const accessToken = localStorage.getItem('access_token')
+    const response = await fetchWithAuth(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+    });
+    const data = await response.json();
+    videoList.value = data.data || [];
+  } catch (error) {
+    console.error('Error fetching videos:', error);
+    $toast.error('Failed to fetch videos', { duration: 5000, position: 'top-right' });
+  }
+}
+
+const getBrands = async () => {
+  const accessToken = localStorage.getItem('access_token');
+  try {
     const response = await fetchWithAuth(`${apiUrl}/api/brand/`, {
-      headers: { 'Authorization': `Bearer ${accessToken}` }
-    })
-    
-    const data = await response.json()
-    console.log('Brands response:', data) // Debug log
-    
-    if (data.success && data.data) {
-      brands.value = data.data
-      console.log('Brands loaded:', brands.value) // Debug log
-    } else if (data.data) {
-      // Handle case where success field might be missing
-      brands.value = Array.isArray(data.data) ? data.data : []
-      console.log('Brands loaded (no success field):', brands.value) // Debug log
-    } else {
-      console.warn('No brand data received:', data)
-      brands.value = []
-    }
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+    });
+    const data = await response.json();
+    brands.value = data.data || [];
   } catch (error) {
-    console.error('Error fetching brands:', error)
-    brands.value = []
+    console.error('Error fetching brands:', error);
   }
 }
 
-// Calculate statistics
-const calculateStats = () => {
-  const perfumeVideos = videos.value.filter(v => v.adType === 'perfume').length
-  const generalVideos = videos.value.filter(v => v.adType === 'general').length
-  const activeVideos = videos.value.filter(v => v.status === 'active').length
-  
-  videoStats.value = {
-    totalVideos: videos.value.length,
-    perfumeVideos,
-    generalVideos,
-    activeVideos
-  }
+onMounted(() => {
+  getVideoList();
+  getBrands();
+});
+
+function showEdit(item) {
+  isCreateUpdate.value = true;
+  isEdited.value = true;
+  videoID.value = item.id;
+  videoTitle.value = item.title;
+  videoDescription.value = item.description;
+  videoBrand.value = item.brand_id;
+  videoType.value = item.ad_type;
+  videoStatus.value = item.status;
+  videoPriority.value = item.priority;
+  videoDuration.value = item.duration_seconds;
+  videoCost.value = item.cost_per_play;
 }
 
-// File handling
-const onFileChange = async (event) => {
-  const file = event.target.files[0]
-  if (!file) return
-  
-  selectedFile.value = file
-  selectedFileName.value = file.name
-  
-  // Get video duration
-  try {
-    const duration = await getVideoDuration(file)
-    videoForm.value.durationSeconds = Math.round(duration)
-  } catch (error) {
-    console.error('Error getting video duration:', error)
-  }
+function playVideo(item) {
+  currentVideo.value = item;
+  isVideoModal.value = true;
 }
 
-const getVideoDuration = (file) => {
-  return new Promise((resolve, reject) => {
-    const video = document.createElement('video')
-    video.preload = 'metadata'
-    
-    video.onloadedmetadata = () => {
-      window.URL.revokeObjectURL(video.src)
-      resolve(video.duration)
+function closeVideoModal() {
+  isVideoModal.value = false;
+  currentVideo.value = null;
+}
+
+function onVideoError() {
+  $toast.error('Failed to load video', { duration: 5000, position: 'top-right' });
+  closeVideoModal();
+}
+
+const deleteItem = () => {
+  Swal.fire({
+    title: 'Are you sure?',
+    text: "You won't be able to revert this!",
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Yes, delete it!'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      deleteData();
     }
-    
-    video.onerror = () => {
-      reject(new Error('Failed to load video metadata'))
-    }
-    
-    video.src = URL.createObjectURL(file)
   })
 }
 
-// Save video
-const saveVideo = async () => {
+const deleteData = async () => {
+  let accessToken = localStorage.getItem('access_token');
   try {
-    if (editingVideo.value) {
-      await updateVideo()
+    const strIDs = checkedItems.value.join(",");
+    const response = await fetchWithAuth(`${apiUrl}/api/video/${strIDs}`, {
+      method: 'DELETE',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      }
+    });
+    const data = await response.json();
+    if (data.success) {
+      $toast.success(data.message, { duration: 5000, position: 'top-right' });
+      checkedItems.value = [];
+      getVideoList();
     } else {
-      await uploadVideo()
+      $toast.error(data.message || 'Failed to delete video(s)', { duration: 5000, position: 'top-right' });
     }
   } catch (error) {
-    console.error('Error saving video:', error)
+    $toast.error('Failed to delete video(s)', { duration: 5000, position: 'top-right' });
   }
 }
 
-const uploadVideo = async () => {
-  if (!selectedFile.value) return
-  
-  uploading.value = true
-  
+const createData = async () => {
+  let accessToken = localStorage.getItem('access_token');
   try {
-    const formData = new FormData()
-    formData.append('video', selectedFile.value)
-    formData.append('title', videoForm.value.title)
-    formData.append('description', videoForm.value.description)
-    formData.append('brand_id', videoForm.value.brandId)
-    formData.append('ad_type', videoForm.value.adType)
-    formData.append('duration_seconds', videoForm.value.durationSeconds)
-    formData.append('priority', videoForm.value.priority)
-    formData.append('status', videoForm.value.status)
-    formData.append('auto_assign', videoForm.value.autoAssign)
-    formData.append('skip_balance_check', videoForm.value.skipBalanceCheck)
-    
-    const accessToken = localStorage.getItem('access_token')
     const response = await fetchWithAuth(`${apiUrl}/api/video/`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
       },
-      body: formData
-    })
-    
-    const data = await response.json()
+      body: JSON.stringify({
+        title: videoTitle.value,
+        description: videoDescription.value,
+        brand_id: videoBrand.value,
+        ad_type: videoType.value,
+        status: videoStatus.value,
+        priority: videoPriority.value,
+        duration_seconds: videoDuration.value,
+        cost_per_play: videoCost.value
+      })
+    });
+    const data = await response.json();
     if (data.success) {
-      await fetchVideos()
-      resetForm()
-      alert('Video uploaded successfully!')
+      $toast.success('Video created successfully', { duration: 5000, position: 'top-right' });
+      isCreateUpdate.value = false;
+      getVideoList();
     } else {
-      alert('Error uploading video: ' + (data.message || 'Unknown error'))
+      $toast.error(data.message || 'Failed to create video', { duration: 5000, position: 'top-right' });
     }
   } catch (error) {
-    console.error('Error uploading video:', error)
-    alert('Error uploading video')
-  } finally {
-    uploading.value = false
+    $toast.error('Failed to create video', { duration: 5000, position: 'top-right' });
   }
 }
 
-const updateVideo = async () => {
-  saving.value = true
-  
+const updateData = async () => {
   try {
-    const formData = new FormData()
-    if (selectedFile.value) {
-      formData.append('video', selectedFile.value)
-    }
-    formData.append('title', videoForm.value.title)
-    formData.append('description', videoForm.value.description)
-    formData.append('brand_id', videoForm.value.brandId)
-    formData.append('ad_type', videoForm.value.adType)
-    formData.append('duration_seconds', videoForm.value.durationSeconds)
-    formData.append('priority', videoForm.value.priority)
-    formData.append('status', videoForm.value.status)
-    
-    const accessToken = localStorage.getItem('access_token')
-    const response = await fetchWithAuth(`${apiUrl}/api/video/${editingVideo.value.id}`, {
+    let accessToken = localStorage.getItem('access_token');
+    const response = await fetchWithAuth(`${apiUrl}/api/video/${videoID.value}`, {
       method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
       },
-      body: formData
-    })
-    
-    const data = await response.json()
+      body: JSON.stringify({
+        title: videoTitle.value,
+        description: videoDescription.value,
+        brand_id: videoBrand.value,
+        ad_type: videoType.value,
+        status: videoStatus.value,
+        priority: videoPriority.value,
+        duration_seconds: videoDuration.value,
+        cost_per_play: videoCost.value
+      })
+    });
+    const data = await response.json();
     if (data.success) {
-      await fetchVideos()
-      resetForm()
-      alert('Video updated successfully!')
+      $toast.success('Video updated successfully', { duration: 5000, position: 'top-right' });
+      isCreateUpdate.value = false;
+      getVideoList();
     } else {
-      alert('Error updating video: ' + (data.message || 'Unknown error'))
+      $toast.error(data.message || 'Failed to update video', { duration: 5000, position: 'top-right' });
     }
   } catch (error) {
-    console.error('Error updating video:', error)
-    alert('Error updating video')
-  } finally {
-    saving.value = false
+    $toast.error('Failed to update video', { duration: 5000, position: 'top-right' });
   }
 }
 
-// Delete video
-const deleteVideo = async (videoId) => {
-  if (!confirm('Are you sure you want to delete this video?')) return
-  
-  try {
-    const accessToken = localStorage.getItem('access_token')
-    const response = await fetchWithAuth(`${apiUrl}/api/video/${videoId}`, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`
-      }
-    })
-    
-    const data = await response.json()
-    if (data.success) {
-      await fetchVideos()
-      alert('Video deleted successfully!')
+const submitForm = () => {
+  const form = document.querySelector('form');
+  if (form.checkValidity()) {
+    if (isEdited.value) {
+      updateData();
     } else {
-      alert('Error deleting video: ' + (data.message || 'Unknown error'))
+      createData();
     }
-  } catch (error) {
-    console.error('Error deleting video:', error)
-    alert('Error deleting video')
   }
-}
+  form.classList.add('was-validated');
+};
 
-// Edit video
-const editVideo = (video) => {
-  editingVideo.value = video
-  videoForm.value = {
-    title: video.title,
-    description: video.description,
-    brandId: video.brand_id,
-    adType: video.ad_type,
-    durationSeconds: video.duration_seconds,
-    priority: video.priority || 'medium',
-    status: video.status,
-    autoAssign: false,
-    skipBalanceCheck: false
-  }
-  selectedFileName.value = ''
-}
-
-// Reset form
-const resetForm = () => {
-  editingVideo.value = null
-  selectedFile.value = null
-  selectedFileName.value = ''
-  videoForm.value = {
-    title: '',
-    description: '',
-    brandId: '',
-    adType: '',
-    durationSeconds: 0,
-    priority: 'medium',
-    status: 'active',
-    autoAssign: false,
-    skipBalanceCheck: false
-  }
+function clearForm() {
+  videoTitle.value = '';
+  videoDescription.value = '';
+  videoBrand.value = '';
+  videoType.value = '';
+  videoStatus.value = '';
+  videoPriority.value = 'medium';
+  videoDuration.value = 0;
+  videoCost.value = 0;
+  videoID.value = null;
 }
 
 // Utility functions
 const formatDuration = (seconds) => {
-  if (!seconds) return '0:00'
-  const minutes = Math.floor(seconds / 60)
-  const remainingSeconds = seconds % 60
-  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+  if (!seconds) return '0:00';
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 }
 
-const getStatusClass = (status) => {
+const getAdTypeBadgeClass = (type) => {
+  switch (type) {
+    case 'general': return 'badge-primary';
+    case 'perfume': return 'badge-success';
+    default: return 'badge-secondary';
+  }
+}
+
+const getStatusBadgeClass = (status) => {
   switch (status) {
-    case 'active': return 'badge-success'
-    case 'inactive': return 'badge-secondary'
-    case 'pending': return 'badge-warning'
-    default: return 'badge-secondary'
+    case 'approved': return 'badge-success';
+    case 'pending': return 'badge-warning';
+    case 'rejected': return 'badge-danger';
+    default: return 'badge-secondary';
   }
 }
 
-const getBrandName = (video) => {
-  if (!video.brand_id) return 'No Brand'
-  const brand = brands.value.find(b => (b.id || b.ID) === video.brand_id)
-  return brand ? brand.name : `Brand ${video.brand_id}`
-}
-
-const getVideoUrl = (filePath) => {
-  if (!filePath) return ''
-  return `${apiUrl}${filePath}`
-}
-
-// Navigation
-const goToCreatePage = () => {
-  navigateTo('/admin/videos/create')
-}
-
-// Video preview
-const previewVideo = (video) => {
-  previewVideoData.value = video
-  showPreviewModal.value = true
-  videoError.value = false
-  videoLoading.value = true
-}
-
-const closePreviewModal = () => {
-  showPreviewModal.value = false
-  previewVideoData.value = null
-  videoError.value = false
-  videoLoading.value = false
-  
-  // Stop video if playing
-  const videoElement = document.getElementById('previewVideoElement')
-  if (videoElement) {
-    videoElement.pause()
-    videoElement.currentTime = 0
+const getPriorityBadgeClass = (priority) => {
+  switch (priority) {
+    case 'high': return 'badge-danger';
+    case 'medium': return 'badge-warning';
+    case 'low': return 'badge-info';
+    default: return 'badge-secondary';
   }
 }
 
-const handleVideoError = () => {
-  videoError.value = true
-  videoLoading.value = false
-}
-
-const handleVideoLoadStart = () => {
-  videoLoading.value = true
-  videoError.value = false
-}
-
-const handleVideoCanPlay = () => {
-  videoLoading.value = false
-}
-
-// Slot assignment
-const showSlotAssignmentModal = ref(false)
-const selectedVideoForSlot = ref(null)
-const availableSlots = ref([])
-const loadingSlots = ref(false)
-const assigningToSlot = ref(false)
-
-const slotAssignmentForm = ref({
-  slotId: '',
-  priority: 'medium',
-  startDate: '',
-  endDate: ''
-})
-
-const assignToSlot = async (video) => {
-  selectedVideoForSlot.value = video
-  showSlotAssignmentModal.value = true
-  await fetchAvailableSlots()
-}
-
-const closeSlotAssignmentModal = () => {
-  showSlotAssignmentModal.value = false
-  selectedVideoForSlot.value = null
-  slotAssignmentForm.value = {
-    slotId: '',
-    priority: 'medium',
-    startDate: '',
-    endDate: ''
-  }
-}
-
-const fetchAvailableSlots = async () => {
-  loadingSlots.value = true
+const activateVideo = async (item) => {
+  const accessToken = localStorage.getItem('access_token');
   try {
-    const accessToken = localStorage.getItem('access_token')
-    const response = await fetchWithAuth(`${apiUrl}/api/slot/`, {
-      headers: { 'Authorization': `Bearer ${accessToken}` }
-    })
-    
-    const data = await response.json()
-    if (data.success) {
-      availableSlots.value = data.data || []
-    }
-  } catch (error) {
-    console.error('Error fetching slots:', error)
-  } finally {
-    loadingSlots.value = false
-  }
-}
-
-const submitSlotAssignment = async () => {
-  if (!selectedVideoForSlot.value || !slotAssignmentForm.value.slotId) return
-  
-  assigningToSlot.value = true
-  
-  try {
-    const accessToken = localStorage.getItem('access_token')
-    const response = await fetchWithAuth(`${apiUrl}/api/slot-assignment/`, {
-      method: 'POST',
+    const response = await fetchWithAuth(`${apiUrl}/api/video/${item.id}/activate`, {
+      method: 'PUT',
       headers: {
+        'Content-Type': 'application/json',
         'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        video_id: selectedVideoForSlot.value.id,
-        slot_id: parseInt(slotAssignmentForm.value.slotId),
-        priority: slotAssignmentForm.value.priority,
-        start_date: slotAssignmentForm.value.startDate || null,
-        end_date: slotAssignmentForm.value.endDate || null
-      })
-    })
-    
-    const data = await response.json()
+      }
+    });
+    const data = await response.json();
     if (data.success) {
-      await fetchVideos() // Refresh videos to show new assignments
-      closeSlotAssignmentModal()
-      alert('Video assigned to slot successfully!')
+      $toast.success('Video activated successfully', { duration: 5000, position: 'top-right' });
+      getVideoList();
     } else {
-      alert('Error assigning video to slot: ' + (data.message || 'Unknown error'))
+      $toast.error(data.message || 'Failed to activate video', { duration: 5000, position: 'top-right' });
     }
   } catch (error) {
-    console.error('Error assigning video to slot:', error)
-    alert('Error assigning video to slot')
-  } finally {
-    assigningToSlot.value = false
+    $toast.error('Failed to activate video', { duration: 5000, position: 'top-right' });
   }
 }
 
-// Analytics
-const viewAnalytics = (videoId) => {
-  navigateTo(`/admin/analytics/video/${videoId}`)
+const deactivateVideo = async (item) => {
+  const accessToken = localStorage.getItem('access_token');
+  try {
+    const response = await fetchWithAuth(`${apiUrl}/api/video/${item.id}/deactivate`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      }
+    });
+    const data = await response.json();
+    if (data.success) {
+      $toast.success('Video deactivated successfully', { duration: 5000, position: 'top-right' });
+      getVideoList();
+    } else {
+      $toast.error(data.message || 'Failed to deactivate video', { duration: 5000, position: 'top-right' });
+    }
+  } catch (error) {
+    $toast.error('Failed to deactivate video', { duration: 5000, position: 'top-right' });
+  }
 }
 
-// Initialize
-onMounted(async () => {
-  await Promise.all([
-    fetchVideos(),
-    fetchBrands()
-  ])
-})
+// Function to handle video source URL construction
+const getVideoSrc = (filePath) => {
+  if (!filePath) return '';
+  
+  // If the path starts with /public, remove the /public prefix
+  if (filePath.startsWith('/public')) {
+    const relativePath = filePath.substring(8); // Remove '/public' prefix
+    console.log('Relative Path:', relativePath); // Debugging line
+    return `${apiUrl}/${relativePath}`;
+  }
+  
+  // Otherwise, use the path as-is
+  return `${apiUrl}${filePath}`;
+}
 </script>
 
 <style scoped>
-.video-thumbnail {
-  width: 60px;
-  height: 40px;
-  border-radius: 4px;
+.video-title {
+  max-width: 200px;
+}
+
+.video-description {
+  white-space: nowrap;
   overflow: hidden;
-  background: #f8f9fa;
+  text-overflow: ellipsis;
+}
+
+.actions-cell {
+  text-align: center;
+  min-width: 150px;
+}
+
+.btn-group {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  gap: 2px;
 }
 
-.thumbnail-video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.thumbnail-placeholder {
-  color: #6c757d;
-  font-size: 18px;
-}
-
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.modal {
   z-index: 1050;
 }
 
-.modal-dialog {
-  background: white;
-  border-radius: 8px;
-  max-width: 90%;
-  max-height: 90%;
-  overflow: auto;
-}
-
-.modal-header {
-  padding: 1rem;
-  border-bottom: 1px solid #dee2e6;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.modal-body {
-  padding: 1rem;
-}
-
-.close-btn {
+.btn-close {
   background: none;
   border: none;
   font-size: 1.5rem;
-  cursor: pointer;
+  font-weight: bold;
+  color: #000;
+  opacity: 0.5;
 }
 
-.preview-video {
-  max-width: 100%;
-  max-height: 400px;
+.btn-close:hover {
+  opacity: 0.75;
 }
 
-.video-error {
-  padding: 2rem;
-  text-align: center;
-  color: #6c757d;
+.badge {
+  font-size: 0.75rem;
+  padding: 0.375rem 0.75rem;
 }
 
-.video-error i {
-  font-size: 3rem;
-  margin-bottom: 1rem;
-}
-
-.actionable {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.left-action, .right-action {
-  display: flex;
-  align-items: center;
-}
+.badge-primary { background-color: #007bff; }
+.badge-success { background-color: #28a745; }
+.badge-warning { background-color: #ffc107; color: #212529; }
+.badge-danger { background-color: #dc3545; }
+.badge-info { background-color: #17a2b8; }
+.badge-secondary { background-color: #6c757d; }
 </style>
