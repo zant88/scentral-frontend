@@ -1628,10 +1628,10 @@ const closeVideoAssignmentModal = () => {
 
 const saveVideoAssignment = async () => {
   try {
-    // Check if the selected video's brand has balance > 0
+    // Get selected video
     const selectedVideo = videos.value.find(v => v.id === videoAssignmentForm.value.video_id)
-    if (!selectedVideo?.brand?.balance || selectedVideo.brand.balance <= 0) {
-      $toast.error('Cannot assign video: Brand balance must be greater than 0', { duration: 5000, position: 'top-right' })
+    if (!selectedVideo) {
+      $toast.error('Please select a valid video', { duration: 5000, position: 'top-right' })
       return
     }
 
@@ -1666,13 +1666,6 @@ const saveVideoAssignment = async () => {
       }
     }
 
-    // Double-check: Make sure we're not finding false positives
-    if (!existingAssignment) {
-      console.log('No existing assignment found, proceeding with assignment')
-      console.log('Form data:', videoAssignmentForm.value)
-      console.log('Current slot assignments:', slotAssignments.value)
-    }
-
     savingVideoAssignment.value = true
     const accessToken = localStorage.getItem('access_token')
     
@@ -1683,7 +1676,8 @@ const saveVideoAssignment = async () => {
     const assignmentData = {
       ...videoAssignmentForm.value,
       start_date: today,
-      end_date: thirtyDaysLater
+      end_date: thirtyDaysLater,
+      ad_type: selectedVideo.adType // Automatically set based on video type
     }
     
     console.log('Sending assignment data:', assignmentData)
@@ -1701,9 +1695,17 @@ const saveVideoAssignment = async () => {
     if (data.success) {
       $toast.success('Video assigned successfully', { duration: 5000, position: 'top-right' })
       await fetchSlotAssignments(currentSlot.value.id)
+      await fetchSlots()
       closeVideoAssignmentModal()
     } else {
-      $toast.error(data.message || 'Failed to assign video', { duration: 5000, position: 'top-right' })
+      // Handle specific error messages from the backend
+      if (data.message && (data.message.includes('full') || data.message.includes('full') || data.message.includes('capacity'))) {
+        $toast.error(data.message, { duration: 8000, position: 'top-right' })
+      } else if (data.message && (data.message.includes('perfume') || data.message.includes('general'))) {
+        $toast.error(data.message, { duration: 8000, position: 'top-right' })
+      } else {
+        $toast.error(data.message || 'Failed to assign video', { duration: 5000, position: 'top-right' })
+      }
     }
   } catch (error) {
     console.error('Error assigning video:', error)
@@ -1859,10 +1861,10 @@ const closeManualAssignmentForm = () => {
 
 const saveManualAssignment = async () => {
   try {
-    // Check if the selected video's brand has balance > 0
+    // Get selected video
     const selectedVideo = videos.value.find(v => v.id === manualAssignmentForm.value.video_id)
-    if (!selectedVideo?.brand?.balance || selectedVideo.brand.balance <= 0) {
-      $toast.error('Cannot assign video: Brand balance must be greater than 0', { duration: 5000, position: 'top-right' })
+    if (!selectedVideo) {
+      $toast.error('Please select a valid video', { duration: 5000, position: 'top-right' })
       return
     }
 
@@ -1906,7 +1908,8 @@ const saveManualAssignment = async () => {
     const assignmentData = {
       ...manualAssignmentForm.value,
       start_date: today,
-      end_date: thirtyDaysLater
+      end_date: thirtyDaysLater,
+      ad_type: selectedVideo.adType // Automatically set based on video type
     }
     
     const response = await fetchWithAuth(`${apiUrl}/api/slot-assignment`, {
@@ -1924,7 +1927,14 @@ const saveManualAssignment = async () => {
       await fetchSlots()
       closeManualAssignmentForm()
     } else {
-      $toast.error(data.message || 'Failed to assign video', { duration: 5000, position: 'top-right' })
+      // Handle specific error messages from the backend
+      if (data.message && (data.message.includes('full') || data.message.includes('full') || data.message.includes('capacity'))) {
+        $toast.error(data.message, { duration: 8000, position: 'top-right' })
+      } else if (data.message && (data.message.includes('perfume') || data.message.includes('general'))) {
+        $toast.error(data.message, { duration: 8000, position: 'top-right' })
+      } else {
+        $toast.error(data.message || 'Failed to assign video', { duration: 5000, position: 'top-right' })
+      }
     }
   } catch (error) {
     console.error('Error assigning video:', error)
