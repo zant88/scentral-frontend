@@ -56,6 +56,15 @@
         <button class="retry-button" @click="retry">Retry</button>
       </div>
 
+      <!-- Load New Video Button -->
+      <button id="loadVideoBtn" v-show="!isFullscreen" @click="loadNewVideos" title="Load New Videos">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+      </button>
+
       <!-- Fullscreen Button -->
       <button id="fullscreenBtn" v-show="!isFullscreen" @click="toggleFullscreen" title="Enter Fullscreen">
         <svg v-if="!isFullscreen" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -84,9 +93,11 @@ definePageMeta({
 })
 
 const config = useRuntimeConfig();
+const apiBaseUrl = ref(`${config.public.apiBase}`);
+const mqttBaseUrl = ref(`${config.public.mqttBase}`);
 // Reactive state
 const machineId = ref('')
-const apiBaseUrl = ref('')
+
 const mqttClient = ref(null)
 const manifest = ref(null)
 const currentVideo = ref(null)
@@ -153,7 +164,7 @@ const getApiBaseUrl = () => {
   }
   
   // Default to backend server on port 3030
-  return 'http://localhost:3030/api'
+  return apiBaseUrl.value;
 }
 
 const getDebugMode = () => {
@@ -169,7 +180,7 @@ const getMqttUrl = () => {
   }
   
   // Default MQTT configuration
-  return 'ws://localhost:9001/mqtt' // WebSocket endpoint
+  return mqttBaseUrl.value // WebSocket endpoint
 }
 
 // Utility function to clean video URLs
@@ -239,7 +250,7 @@ const addDebugLog = (level, message) => {
 // Load slot assignments from the backend
 const loadSlotAssignments = async () => {
   try {
-    const response = await fetch(`${apiBaseUrl.value}/video-player/slot-assignments/${machineId.value}`)
+    const response = await fetch(`${apiBaseUrl.value}/api/video-player/slot-assignments/${machineId.value}`)
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`)
     }
@@ -411,7 +422,9 @@ const subscribeToMqttTopics = () => {
     `scentral/video-player/recache/${machineId.value}`,
     `scentral/video-player/perfume-trigger/${machineId.value}`,
     'scentral/video-player/recache',
-    'scentral/video-player/perfume-trigger'
+    'scentral/video-player/perfume-trigger',
+    `scentral/video-assignment/${machineId.value}`,
+    'scentral/video-assignment'
   ]
   
   topics.forEach(topic => {
@@ -431,6 +444,8 @@ const handleMqttMessage = (message) => {
       handleRecacheTrigger(payload)
     } else if (message.destinationName.includes('perfume-trigger')) {
       handlePerfumeAdTrigger(payload)
+    } else if (message.destinationName.includes('video-assignment')) {
+      handleVideoAssignmentTrigger(payload)
     }
     
   } catch (error) {
@@ -478,6 +493,48 @@ const handlePerfumeAdTrigger = async (trigger) => {
   await playPerfumeAd(trigger.brandId)
 }
 
+const handleVideoAssignmentTrigger = async (trigger) => {
+  // Check if this trigger is for this machine or for all machines
+  if (trigger.machineId && trigger.machineId !== machineId.value) {
+    return // Not for this machine
+  }
+  
+  log('info', `Video assignment trigger received: ${trigger.action} for video ${trigger.videoId} in slot ${trigger.slotId}`)
+  
+  // If a video was removed or updated, refresh our slot assignments
+  if (trigger.action === 'removed' || trigger.action === 'updated') {
+    log('info', 'Refreshing slot assignments due to video assignment change')
+    await loadSlotAssignments()
+    
+    // Reinitialize the playback loop with the updated assignments
+    initializePlaybackLoop()
+    
+    // If the currently playing video was removed, switch to the next video
+    if (trigger.action === 'removed' && currentVideo.value && currentVideo.value.id === trigger.videoId) {
+      log('info', 'Currently playing video was removed, switching to next video')
+      setTimeout(() => {
+        playNextInLoop()
+      }, 1000) // Give a moment before switching
+    }
+  }
+  
+  // If a new video was assigned and should play now, handle it
+  if (trigger.action === 'assigned' && trigger.shouldPlayNow) {
+    log('info', 'New video assigned and should play now')
+    
+    // Find the video in our manifest
+    const video = findVideoInManifest(trigger.videoId)
+    if (video) {
+      // Find the slot
+      const slot = findSlotInManifest(trigger.slotId)
+      if (slot) {
+        // Play the video immediately
+        await playVideo(video, trigger.adType, slot)
+      }
+    }
+  }
+}
+
 const scheduleMqttReconnect = () => {
   setTimeout(() => {
     log('info', 'Attempting to reconnect MQTT...')
@@ -490,7 +547,7 @@ const loadManifest = async () => {
   try {
     loadingText.value = 'Loading video manifest...'
     
-    const response = await fetch(`${apiBaseUrl.value}/video-player/manifest/${machineId.value}`)
+    const response = await fetch(`${apiBaseUrl.value}/api/video-player/manifest/${machineId.value}`)
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`)
     }
@@ -631,7 +688,7 @@ const cacheVideo = async (video) => {
       // If direct fetch fails due to CORS, try proxy through the API
       log('warn', `Direct fetch failed due to CORS, trying proxy: ${fetchError.message}`)
       
-      const proxyUrl = `${apiBaseUrl.value}/video-player/proxy-video`
+      const proxyUrl = `${apiBaseUrl.value}/api/video-player/proxy-video`
       const formData = new FormData()
       formData.append('url', video.file_path)
       
@@ -746,7 +803,7 @@ const openIndexedDB = () => {
 // Balance checking functions
 const loadBrandBalances = async () => {
   try {
-    const response = await fetch(`${apiBaseUrl.value}/video-player/brand-balances/${machineId.value}`)
+    const response = await fetch(`${apiBaseUrl.value}/api/video-player/brand-balances/${machineId.value}`)
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`)
     }
@@ -1225,7 +1282,7 @@ const logPlaybackEvent = async (eventData) => {
     
     // Try to send immediately
     try {
-      const response = await fetch(`${apiBaseUrl.value}/video-player/playback-event`, {
+      const response = await fetch(`${apiBaseUrl.value}/api/video-player/playback-event`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -1370,6 +1427,73 @@ const handleFullscreenChange = () => {
   }
 }
 
+// Load new videos function
+const loadNewVideos = async () => {
+  try {
+    log('info', 'Loading new videos - clearing cache and reloading manifest...')
+    
+    // Show loading state
+    isLoading.value = true
+    loadingText.value = 'Clearing cache and loading new videos...'
+    
+    // Stop current video playback
+    const videoElement = document.getElementById('videoPlayer')
+    if (videoElement) {
+      videoElement.pause()
+      videoElement.src = ''
+      videoElement.load()
+    }
+    
+    // Clear IndexedDB cache
+    await clearVideoCache()
+    
+    // Reset state variables
+    currentVideo.value = null
+    currentSlot.value = null
+    isPerfumeAdPlaying.value = false
+    isPlayingAd.value = false
+    playbackLoop.value = []
+    currentLoopIndex.value = 0
+    retryCount.value = 0
+    
+    // Reload manifest and slot assignments
+    await loadManifest()
+    
+    // Restart playback loop
+    startPlaybackLoop()
+    
+    log('info', 'New videos loaded successfully')
+    
+  } catch (error) {
+    log('error', `Failed to load new videos: ${error.message}`)
+    showErrorDialog(`Failed to load new videos: ${error.message}`)
+  }
+}
+
+// Clear video cache from IndexedDB
+const clearVideoCache = async () => {
+  try {
+    const db = await openIndexedDB()
+    const transaction = db.transaction(['videos'], 'readwrite')
+    const store = transaction.objectStore('videos')
+    
+    return new Promise((resolve, reject) => {
+      const request = store.clear()
+      request.onsuccess = () => {
+        log('info', 'Video cache cleared successfully')
+        resolve()
+      }
+      request.onerror = () => {
+        log('error', `Failed to clear video cache: ${request.error}`)
+        reject(request.error)
+      }
+    })
+  } catch (error) {
+    log('error', `Failed to clear video cache: ${error.message}`)
+    throw error
+  }
+}
+
 // Main initialization
 const init = async () => {
   console.log('testing');
@@ -1403,7 +1527,11 @@ const init = async () => {
 onBeforeMount(() => {
   // Initialize configuration
   machineId.value = getMachineId()
-  apiBaseUrl.value = getApiBaseUrl()
+  const urlParams = new URLSearchParams(window.location.search)
+  const apiUrlParam = urlParams.get('apiUrl')
+  if (apiUrlParam) {
+    apiBaseUrl.value = apiUrlParam
+  }
   debugMode.value = getDebugMode()
   
   // Ensure debugLogs is initialized before any logging
@@ -1592,6 +1720,34 @@ onBeforeUnmount(() => {
 
 .retry-button:hover {
   background: #f5f5f5;
+}
+
+#loadVideoBtn {
+  position: fixed;
+  bottom: 20px;
+  left: 80px;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  border: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 9999;
+  transition: all 0.3s ease;
+}
+
+#loadVideoBtn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.1);
+}
+
+#loadVideoBtn svg {
+  width: 24px;
+  height: 24px;
 }
 
 #fullscreenBtn {
