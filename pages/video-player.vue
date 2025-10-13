@@ -1195,6 +1195,20 @@ const showBlackScreen = () => {
 // Logging and analytics
 const logPlaybackEvent = async (eventData) => {
   try {
+    // Skip tracking for default videos
+    if (eventData.adType === 'default') {
+      log('info', `Skipping tracking for default video: ${eventData.videoId}`)
+      return
+    }
+    
+    // Check if the brand is eligible to play ads (has sufficient balance)
+    const brandBalance = brandBalances.value[eventData.brandId]
+    if (brandBalance && (brandBalance.current_balance <= 0 ||
+        (brandBalance.estimated_remaining_plays <= 0 && brandBalance.cost_per_play_avg > 0))) {
+      log('info', `Skipping tracking for ineligible brand ${eventData.brandId}: insufficient balance`)
+      return
+    }
+    
     const event = {
       machine_id: machineId.value,
       video_id: eventData.videoId,

@@ -42,7 +42,7 @@
                 <td>{{ sale.quantity }}</td>
                 <td>Rp. {{ sale.total_price }}</td>
                 <td>
-                  <span :class="{'badge badge-success': sale.payment_status === 'paid', 'badge badge-warning': sale.payment_status === 'pending'}">
+                  <span style="width: 100%;" :class="{'badge badge-success': sale.payment_status === 'paid', 'badge badge-warning': sale.payment_status === 'pending', 'badge badge-danger': sale.payment_status === 'canceled'}">
                     {{ sale.payment_status }}
                   </span>
                 </td>
@@ -134,5 +134,8 @@ onMounted(() => {
 }
 .badge-warning {
   background: #ffa426;
+}
+.badge-danger {
+  background: #dc3545;
 }
 </style>

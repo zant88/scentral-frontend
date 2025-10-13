@@ -10,9 +10,9 @@ export default defineNuxtRouteMiddleware((to, from) => {
     return navigateTo('/login')
   }
   
-  // If user is brand, redirect to brand dashboard (preserve existing behavior)
+  // If user is brand, allow access to brand pages
   if (isBrand()) {
-    return navigateTo('/brand/dashboard')
+    return // Brand user can proceed to brand pages
   }
   
   // Allow admin users to access brand pages for administration

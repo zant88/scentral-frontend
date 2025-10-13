@@ -46,6 +46,10 @@
                     <NuxtLink :to="`/ads/display?device_id=${item.code}`" target="_blank" class="btn btn-outline-primary" title="Show Ads">
                       <i class="fas fa-ad"></i>
                     </NuxtLink>
+                    &nbsp;
+                    <NuxtLink :to="`/video-player?machineId=${item.code}`" target="_blank" class="btn btn-outline-success" title="Video Player">
+                      <i class="fas fa-play"></i>
+                    </NuxtLink>
                   </td>
                 </tr>
               </tbody>

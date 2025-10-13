@@ -172,8 +172,11 @@
                 <a href="#" class="btn btn-icon btn-info note-btn" @click="bulkEditSlots" v-if="anyChecked" data-toggle="tooltip"
                   title="Bulk Edit"><i class="fas fa-edit"></i></a>
                 <button class="btn btn-primary" @click="showAddSlot">
-                    <i class="fas fa-plus mr-2"></i>Add New Slot
-                  </button>
+                  <i class="fas fa-plus mr-2"></i>Add New Slot
+                </button>
+                <button class="btn btn-secondary" @click="openMachineSelectionModal">
+                  <i class="fas fa-play mr-2"></i> Play Video Ads
+                </button>
               </div>
               <div class="right-action">
                 <div class="input-group">
@@ -953,6 +956,36 @@
       </div>
     </div>
   </div>
+
+  <!-- Machine Selection Modal -->
+  <div v-if="showMachineModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeMachineSelectionModal">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Select Machine for Video Ads</h5>
+          <button type="button" class="btn-close" @click="closeMachineSelectionModal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="machineSelect">Select Machine</label>
+            <select id="machineSelect" v-model="selectedMachineId" class="form-control" required>
+              <option value="">Choose a machine...</option>
+              <option v-for="machine in machines" :key="machine.id" :value="machine.id">
+                {{ machine.code }} - {{ machine.position }}
+              </option>
+            </select>
+            <small class="form-text text-muted">Select a machine to play video ads for</small>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @click="closeMachineSelectionModal">Cancel</button>
+          <button type="button" class="btn btn-primary" @click="openVideoPlayer" :disabled="!selectedMachineId">
+            <i class="fas fa-play mr-2"></i>Play Video Ads
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -995,6 +1028,8 @@ const showVideoAssignmentModal = ref(false)
 const showVideoPreviewModal = ref(false)
 const showManualAssignmentForm = ref(false)
 const showVideoInfoModal = ref(false)
+const showMachineModal = ref(false)
+const selectedMachineId = ref('')
 
 // Form states
 const editingSlot = ref(null)
@@ -1942,6 +1977,40 @@ const saveManualAssignment = async () => {
   } finally {
     savingManualAssignment.value = false
   }
+}
+
+// Machine selection methods
+const openMachineSelectionModal = () => {
+  selectedMachineId.value = ''
+  showMachineModal.value = true
+}
+
+const closeMachineSelectionModal = () => {
+  showMachineModal.value = false
+  selectedMachineId.value = ''
+}
+
+const openVideoPlayer = () => {
+  if (!selectedMachineId.value) {
+    $toast.error('Please select a machine', { duration: 5000, position: 'top-right' })
+    return
+  }
+  
+  // Find the selected machine to get its code
+  const selectedMachine = machines.value.find(m => m.id === selectedMachineId.value)
+  if (!selectedMachine) {
+    $toast.error('Invalid machine selection', { duration: 5000, position: 'top-right' })
+    return
+  }
+  
+  // Open video player in a new tab with the machine code
+  const videoPlayerUrl = `/video-player?machineId=${selectedMachine.code}`
+  window.open(videoPlayerUrl, '_blank')
+  
+  // Close the modal
+  closeMachineSelectionModal()
+  
+  $toast.success(`Opening video player for machine ${selectedMachine.code}`, { duration: 5000, position: 'top-right' })
 }
 
 </script>

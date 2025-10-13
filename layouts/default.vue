@@ -85,6 +85,12 @@
               </a>
             </li>
             <li class="menu-header">Advertising Management</li>
+            <li class="nav-item" :class="isActive('/advertisement')">
+              <a href="javascript:void(0)" @click="navigateTo('/advertisement')" class="nav-link">
+                <i class="fas fa-ad"></i>
+                <span>Legacy Advertisement</span>
+              </a>
+            </li>
             <li class="nav-item" :class="isActive('/admin/slots')">
               <a href="javascript:void(0)" @click="navigateTo('/admin/slots')" class="nav-link">
                 <i class="fas fa-clock"></i>

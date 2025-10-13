@@ -242,17 +242,19 @@ const login = async () => {
         position: 'top-right'
       });
       
-      // Role-based redirection with a small delay
+      // Role-based redirection using window.location for more reliable navigation
       const userRole = data.data.user.role;
-      setTimeout(() => {
-        if (userRole === 'admin') {
-          navigateTo('/admin/dashboard');
-        } else if (userRole === 'brand') {
-          navigateTo('/brand/dashboard');
-        } else {
-          navigateTo('/');
-        }
-      }, 200);
+      
+      // Use window.location.href instead of navigateTo to avoid middleware conflicts
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      if (userRole === 'admin') {
+        window.location.href = '/admin/dashboard';
+      } else if (userRole === 'brand') {
+        window.location.href = '/brand/dashboard';
+      } else {
+        window.location.href = '/';
+      }
     }
   }catch (error) {
     console.error(error);

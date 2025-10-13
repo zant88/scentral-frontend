@@ -61,6 +61,7 @@
                         <option value="">Select Ad Type</option>
                         <option value="general">General Ad</option>
                         <option value="perfume">Perfume Ad</option>
+                        <option value="default">Default Ad</option>
                       </select>
                       <div class="invalid-feedback">
                         Please select an ad type.
