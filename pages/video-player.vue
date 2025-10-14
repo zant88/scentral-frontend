@@ -102,11 +102,12 @@ definePageMeta({
 
 const config = useRuntimeConfig();
 const apiBaseUrl = ref(`${config.public.apiBase}`);
-const mqttBaseUrl = ref(`${config.public.mqttBase}`);
+const { $mqtt } = useNuxtApp()
 // Reactive state
 const machineId = ref('')
 
-const mqttClient = ref(null)
+// Use the global MQTT instance instead of creating a new one
+const mqttClient = computed(() => $mqtt)
 const manifest = ref(null)
 const currentVideo = ref(null)
 const currentSlot = ref(null)
@@ -131,6 +132,8 @@ const currentLoopIndex = ref(0)
 const isPlayingAd = ref(false)
 const showCachingProgress = ref(false)
 const videosToCache = ref([])
+const startTimeSlot = ref(null)
+const endTimeSlot = ref(null)
 const cachingProgress = ref({
   percentage: 0,
   cachedCount: 0,
@@ -148,6 +151,7 @@ const isActiveWindow = ref(false) // 08:00-23:00 active window
 const slotCheckInterval = ref(null)
 const balanceCheckInterval = ref(null)
 const activeWindowCheckInterval = ref(null)
+const slotTimeCheckInterval = ref(null) // New interval for checking slot time every second
 
 // Configuration functions
 const getMachineId = () => {
@@ -187,16 +191,6 @@ const getDebugMode = () => {
   return urlParams.get('debug') === 'true'
 }
 
-const getMqttUrl = () => {
-  const urlParams = new URLSearchParams(window.location.search)
-  const mqttUrl = urlParams.get('mqttUrl')
-  if (mqttUrl) {
-    return mqttUrl
-  }
-  
-  // Default MQTT configuration
-  return mqttBaseUrl.value // WebSocket endpoint
-}
 
 // Utility function to clean video URLs
 const cleanVideoUrl = (url) => {
@@ -289,14 +283,24 @@ const isVideoAssignedToCurrentSlot = (video, currentSlotData) => {
     return false
   }
   
-  // Find slot assignments for this video
-  const videoAssignments = slotAssignments.value.filter(assignment => 
-    assignment.video_id === video.id && 
+  // First check if the video is in the slot's video IDs (from manifest)
+  if (currentSlotData.general_video_ids && currentSlotData.general_video_ids.length > 0) {
+    const isAssigned = currentSlotData.general_video_ids.includes(video.id)
+    if (isAssigned) {
+      log('info', `Video ${video.title} is in slot ${currentSlotData.name} video list`)
+      return true
+    }
+  }
+  
+  // Fallback to checking slot assignments
+  const videoAssignments = slotAssignments.value.filter(assignment =>
+    assignment.video_id === video.id &&
     assignment.status === 'ACTIVE'
   )
   
   if (videoAssignments.length === 0) {
-    log('warn', `No active slot assignments found for video ${video.title}`)
+    // Only log as debug, not warn, since we might be using general ads without slot assignments
+    log('info', `No active slot assignments found for video ${video.title}`)
     return false
   }
   
@@ -314,8 +318,8 @@ const isVideoAssignedToCurrentSlot = (video, currentSlotData) => {
 
 // Start monitoring for slot changes
 const startSlotMonitoring = () => {
-  // Check for slot changes every minute
-  setInterval(() => {
+  // Check for slot changes every 30 seconds for more responsive changes
+  slotCheckInterval.value = setInterval(() => {
     const now = new Date()
     const currentSlotData = getCurrentTimeSlot()
     
@@ -331,8 +335,15 @@ const startSlotMonitoring = () => {
         // Reinitialize playback loop with new slot
         initializePlaybackLoop()
       }
+    } else {
+      // No current slot, check if we just exited a slot
+      if (lastSlotCheckTime.value) {
+        log('info', 'Exited time slot, reinitializing playback')
+        lastSlotCheckTime.value = null
+        initializePlaybackLoop()
+      }
     }
-  }, 60000) // Check every minute
+  }, 30000) // Check every 30 seconds
 }
 
 // Video event handlers
@@ -374,62 +385,11 @@ const setupVideoEventListeners = () => {
   })
 }
 
-// MQTT functions
-const initializeMQTT = async () => {
-  try {
-    // Check if Paho MQTT is already loaded
-    if (typeof window.Paho === 'undefined') {
-      // Load Paho MQTT library
-      log('info', 'Loading Paho MQTT library...')
-      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.1.0/paho-mqtt.min.js')
-      
-      // Wait a bit for the library to initialize
-      await new Promise(resolve => setTimeout(resolve, 100))
-    }
-    
-    // Check if Paho is available now
-    if (typeof window.Paho === 'undefined' || !window.Paho.MQTT || !window.Paho.MQTT.Client) {
-      throw new Error('Paho MQTT library not available')
-    }
-    
-    const mqttUrl = getMqttUrl()
-    const clientId = `scentral-player-${machineId.value}-${Date.now()}`
-    
-    log('info', `Connecting to MQTT: ${mqttUrl} with client ID: ${clientId}`)
-    
-    mqttClient.value = new window.Paho.MQTT.Client(mqttUrl, clientId)
-    
-    mqttClient.value.onConnectionLost = (responseObject) => {
-      log('warn', `MQTT connection lost: ${responseObject.errorMessage}`)
-      scheduleMqttReconnect()
-    }
-    
-    mqttClient.value.onMessageArrived = (message) => {
-      handleMqttMessage(message)
-    }
-    
-    const connectOptions = {
-      timeout: 10,
-      onSuccess: () => {
-        log('info', 'MQTT connected successfully')
-        subscribeToMqttTopics()
-      },
-      onFailure: (error) => {
-        log('error', `MQTT connection failed: ${error.errorMessage || error}`)
-        scheduleMqttReconnect()
-      }
-    }
-    
-    mqttClient.value.connect(connectOptions)
-    
-  } catch (error) {
-    log('warn', `MQTT initialization failed: ${error.message}`)
-    // Don't fail the entire initialization if MQTT fails
-  }
-}
+// MQTT functions - using the global MQTT instance
 
 const subscribeToMqttTopics = () => {
-  if (!mqttClient.value || !mqttClient.value.isConnected()) {
+  if (!mqttClient.value) {
+    log('warn', 'MQTT client not available')
     return
   }
   
@@ -443,29 +403,13 @@ const subscribeToMqttTopics = () => {
   ]
   
   topics.forEach(topic => {
-    mqttClient.value.subscribe(topic, {
-      onSuccess: () => log('info', `Subscribed to: ${topic}`),
-      onFailure: (error) => log('warn', `Failed to subscribe to ${topic}: ${error.errorMessage}`)
-    })
-  })
-}
-
-const handleMqttMessage = (message) => {
-  try {
-    const payload = JSON.parse(message.payloadString)
-    log('info', `MQTT message received on ${message.destinationName}: ${JSON.stringify(payload)}`)
-    
-    if (message.destinationName.includes('recache')) {
-      handleRecacheTrigger(payload)
-    } else if (message.destinationName.includes('perfume-trigger')) {
-      handlePerfumeAdTrigger(payload)
-    } else if (message.destinationName.includes('video-assignment')) {
-      handleVideoAssignmentTrigger(payload)
+    try {
+      mqttClient.value.subscribe(topic)
+      log('info', `Subscribed to: ${topic}`)
+    } catch (error) {
+      log('warn', `Failed to subscribe to ${topic}: ${error.message}`)
     }
-    
-  } catch (error) {
-    log('error', `Failed to parse MQTT message: ${error.message}`)
-  }
+  })
 }
 
 const handleRecacheTrigger = async (trigger) => {
@@ -550,12 +494,6 @@ const handleVideoAssignmentTrigger = async (trigger) => {
   }
 }
 
-const scheduleMqttReconnect = () => {
-  setTimeout(() => {
-    log('info', 'Attempting to reconnect MQTT...')
-    initializeMQTT()
-  }, 5000)
-}
 
 // Helper functions to find videos and slots in manifest
 const findVideoInManifest = (videoId) => {
@@ -581,6 +519,129 @@ const findSlotInManifest = (slotId) => {
   if (!manifest.value) return null
   
   return manifest.value.time_slots.find(slot => slot.id === slotId) || null
+}
+
+const loadStartAndEndSlotTime = async () => {
+  try {
+    const response = await fetch(`${apiBaseUrl.value}/api/slot/active`)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+    
+    const data = await response.json()
+    if (data.success) {
+      startTimeSlot.value = data.start_time;
+      endTimeSlot.value = data.end_time;
+      
+      // Check if current time is within the slot range
+      const now = new Date()
+      const currentTime = formatTime(now.getHours(), now.getMinutes())
+      const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
+      
+      log('info', `Current time: ${currentTime}, Slot range: ${startTimeSlot.value} - ${endTimeSlot.value}, In range: ${isInSlotRange}`)
+      
+      // Start checking every second
+      startSlotTimeMonitoring()
+      
+      return isInSlotRange
+    } else {
+      throw new Error(data.message || 'Failed to load active slot times')
+    }
+  } catch (error) {
+    log('error', `Failed to load active slot times: ${error.message}`)
+    return null
+  }
+}
+
+// Start monitoring slot time every second
+const startSlotTimeMonitoring = () => {
+  // Clear any existing interval to prevent memory leaks
+  if (slotTimeCheckInterval.value) {
+    clearInterval(slotTimeCheckInterval.value)
+  }
+  
+  // Check every second
+  slotTimeCheckInterval.value = setInterval(() => {
+    const now = new Date()
+    const currentTime = formatTime(now.getHours(), now.getMinutes())
+    const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
+    
+    // If current time is outside slot range
+    if (!isInSlotRange) {
+      // Check if we were previously playing videos (not already showing black screen)
+      if (!isBlackScreenActive.value) {
+        log('info', `Time ${currentTime} is outside slot range ${startTimeSlot.value} - ${endTimeSlot.value}, showing black screen`)
+        showBlackScreen(true)
+      }
+      
+      // If current time has exceeded endTimeSlot, refresh browser to prevent memory leak
+      const currentMinutes = parseTime(currentTime)
+      const endMinutes = parseTime(endTimeSlot.value)
+      
+      // Handle overnight slots
+      let hasExceededEndTime = false
+      if (endMinutes < parseTime(startTimeSlot.value)) {
+        // For overnight slots (e.g., 22:00 to 06:00), check if we've passed the end time of the next day
+        hasExceededEndTime = currentMinutes > endMinutes && currentMinutes > parseTime(startTimeSlot.value)
+      } else {
+        // For normal time slots
+        hasExceededEndTime = currentMinutes > endMinutes
+      }
+      
+      if (hasExceededEndTime) {
+        log('info', `Current time ${currentTime} has exceeded end time ${endTimeSlot.value}, refreshing browser to prevent memory leak`)
+        window.location.reload()
+      }
+    } else {
+      // If current time is within slot range and we were showing black screen
+      if (isBlackScreenActive.value) {
+        log('info', `Time ${currentTime} is within slot range ${startTimeSlot.value} - ${endTimeSlot.value}, resuming video playback`)
+        hideBlackScreen()
+        // Only restart playback if manifest is loaded
+        if (manifest.value) {
+          // Restart playback system if needed
+          if (playbackLoop.value.length === 0) {
+            initializePlaybackLoop()
+          }
+          if (playbackLoop.value.length > 0) {
+            playNextInLoop()
+          }
+        } else {
+          // If manifest is not loaded, we need to initialize the full playback system
+          initializeFullPlaybackSystem()
+        }
+      }
+    }
+  }, 1000) // Check every second
+}
+
+// Initialize full playback system when entering slot range from black screen
+const initializeFullPlaybackSystem = async () => {
+  try {
+    log('info', 'Initializing full playback system after entering slot range')
+    
+    // Load manifest
+    await loadManifest()
+    
+    // Load brand balances
+    await loadBrandBalances()
+    
+    // Start playback loop
+    if (playbackLoop.value.length > 0) {
+      playNextInLoop()
+    } else {
+      log('warn', 'No videos in playback loop after initialization, staying on black screen')
+      showBlackScreen(true)
+    }
+    
+    // Start monitoring intervals
+    balanceCheckInterval.value = setInterval(loadBrandBalances, 5 * 60 * 1000)
+    startSlotMonitoring()
+    
+  } catch (error) {
+    log('error', `Failed to initialize playback system: ${error.message}`)
+    showBlackScreen(true)
+  }
 }
 
 // Manifest and caching functions
@@ -887,7 +948,7 @@ const canPlayVideo = (video) => {
 
 // Playback functions
 const initializePlaybackLoop = () => {
-  // Create the playback loop: [ad1, default, ad2, default, ad3, default, ...]
+  // Create the playback loop: [ad1, default, ad2, default, ad3, default...]
   playbackLoop.value = []
   
   // Get current slot
@@ -899,33 +960,70 @@ const initializePlaybackLoop = () => {
     return
   }
   
+  // If no current slot, show black screen (idle)
+  if (!currentSlotData) {
+    log('warn', 'No active time slot found, showing black screen (idle mode)')
+    showBlackScreen(true)
+    return
+  }
+  
   // Filter ads based on current time slot and balance
-  const availableAds = manifest.value.general_ads.filter(ad => {
-    // Check if video is assigned to current slot
+  let availableAds = []
+  
+  // First try to find ads assigned to the current slot
+  const slotAssignedAds = manifest.value.general_ads.filter(ad => {
     if (currentSlotData && currentSlotData.allow_general) {
       return isVideoAssignedToCurrentSlot(ad, currentSlotData) && canPlayVideo(ad)
     }
     return false
   })
   
-  if (availableAds.length === 0) {
-    log('warn', 'No available general ads with sufficient balance for current slot')
-    if (manifest.value.default_video) {
-      // Only play default video if no ads available
-      playbackLoop.value.push({ type: 'default', video: manifest.value.default_video })
+  if (slotAssignedAds.length > 0) {
+    availableAds = slotAssignedAds
+    log('info', `Using ${availableAds.length} ads assigned to slot ${currentSlotData.name}`)
+  } else {
+    // If no slot-assigned ads, use any available ads with sufficient balance
+    const generalAds = manifest.value.general_ads.filter(ad => canPlayVideo(ad))
+    if (generalAds.length > 0) {
+      availableAds = generalAds
+      log('info', `No slot-assigned ads found, using ${availableAds.length} general ads with sufficient balance`)
     }
+  }
+  
+  if (availableAds.length === 0) {
+    log('warn', `No available general ads for slot ${currentSlotData.name}, showing black screen (idle mode)`)
+    showBlackScreen(true)
+    return
+  } else if (!manifest.value.default_video) {
+    log('warn', 'No default video available, showing black screen (idle mode)')
+    showBlackScreen(true)
+    return
   } else {
     // Create the alternating pattern: ad1, default, ad2, default, ad3, default...
-    availableAds.forEach(ad => {
-      playbackLoop.value.push({ type: 'ad', video: ad })
-      if (manifest.value.default_video) {
-        playbackLoop.value.push({ type: 'default', video: manifest.value.default_video })
-      }
-    })
+    // This ensures proper rotation through all available ads
+    for (let i = 0; i < availableAds.length; i++) {
+      const ad = availableAds[i]
+      
+      // Add the ad to the loop
+      playbackLoop.value.push({
+        type: 'ad',
+        video: ad,
+        originalIndex: i // Store original index for proper rotation
+      })
+      
+      // Add default video after each ad
+      playbackLoop.value.push({
+        type: 'default',
+        video: manifest.value.default_video,
+        originalIndex: i // Store same index to maintain pairing
+      })
+    }
+    
+    log('info', `Created playback loop with ${availableAds.length} ads in pattern: Ad1, Default, Ad2, Default, Ad3, Default...`)
   }
   
   currentLoopIndex.value = 0
-  log('info', `Playback loop initialized with ${playbackLoop.value.length} items (${availableAds.length} ads)`)
+  log('info', `Playback loop initialized for slot ${currentSlotData.name} with ${playbackLoop.value.length} items (${availableAds.length} ads)`)
 }
 
 const startPlaybackLoop = () => {
@@ -944,8 +1042,9 @@ const startPlaybackLoop = () => {
   if (playbackLoop.value.length > 0) {
     playNextInLoop()
   } else {
-    log('warn', 'No videos in playback loop, showing black screen')
+    log('warn', 'No videos in playback loop, showing black screen (idle mode)')
     showBlackScreen(true)
+    return
   }
   
   // Refresh balances every 5 minutes
@@ -954,8 +1053,10 @@ const startPlaybackLoop = () => {
   // Start slot monitoring
   startSlotMonitoring()
   
-  // Start active window monitoring
-  startActiveWindowMonitoring()
+  // Start active window monitoring (if not already started)
+  if (!activeWindowCheckInterval.value) {
+    startActiveWindowMonitoring()
+  }
 }
 
 const playNextInLoop = async () => {
@@ -970,6 +1071,18 @@ const playNextInLoop = async () => {
     if (isPerfumeAdPlaying.value) {
       log('info', 'Perfume ad is playing, pausing loop')
       return
+    }
+    
+    // Check if current slot has changed and reinitialize if needed
+    const currentSlotData = getCurrentTimeSlot()
+    if (!currentSlotData) {
+      log('info', 'No active time slot, reinitializing playback loop')
+      initializePlaybackLoop()
+      if (playbackLoop.value.length === 0) {
+        log('error', 'No videos available to play')
+        showBlackScreen(true)
+        return
+      }
     }
     
     if (playbackLoop.value.length === 0) {
@@ -990,20 +1103,32 @@ const playNextInLoop = async () => {
       if (!canPlayVideo(currentItem.video)) {
         log('info', `Video ${currentItem.video.title} can no longer be played due to insufficient balance`)
         
-        // Remove this item from the loop and reinitialize
-        playbackLoop.value.splice(currentLoopIndex.value, 1)
-        if (playbackLoop.value.length === 0) {
+        // Remove this item and its corresponding default video from the loop
+        const adIndex = currentLoopIndex.value
+        // Find and remove the default video that follows this ad
+        if (adIndex + 1 < playbackLoop.value.length && playbackLoop.value[adIndex + 1].type === 'default') {
+          playbackLoop.value.splice(adIndex, 2) // Remove both ad and its default video
+        } else {
+          playbackLoop.value.splice(adIndex, 1) // Just remove the ad
+        }
+        
+        // Adjust the loop index if needed
+        if (currentLoopIndex.value >= playbackLoop.value.length && playbackLoop.value.length > 0) {
+          currentLoopIndex.value = 0 // Wrap around to beginning
+        }
+        
+        // If no more ads, reinitialize to get fresh list
+        if (playbackLoop.value.length === 0 || !playbackLoop.value.some(item => item.type === 'ad')) {
           initializePlaybackLoop()
         }
-        currentLoopIndex.value = currentLoopIndex.value % playbackLoop.value.length
+        
         playNextInLoop()
         return
       }
       
-      // Check slot assignment
-      const currentSlotData = getCurrentTimeSlot()
+      // Check slot assignment - this is crucial for proper slot-based playback
       if (!currentSlotData || !currentSlotData.allow_general || !isVideoAssignedToCurrentSlot(currentItem.video, currentSlotData)) {
-        log('info', `Ad ${currentItem.video.title} is not assigned to current slot, playing default video`)
+        log('info', `Ad ${currentItem.video.title} is not assigned to current slot ${currentSlotData?.name || 'None'}, playing default video`)
         await playDefaultVideo()
         // Move to next item
         currentLoopIndex.value = (currentLoopIndex.value + 1) % playbackLoop.value.length
@@ -1014,16 +1139,20 @@ const playNextInLoop = async () => {
     isPlayingAd.value = currentItem.type === 'ad'
     
     if (currentItem.type === 'ad') {
-      const currentSlotData = getCurrentTimeSlot()
-      log('info', `Playing ad: ${currentItem.video.title} in slot ${currentSlotData?.name || 'Unknown'}`)
+      log('info', `Playing ad: ${currentItem.video.title} in slot ${currentSlotData?.name || 'Unknown'} (index ${currentLoopIndex.value}/${playbackLoop.value.length})`)
       await playVideo(currentItem.video, 'general', currentSlotData)
     } else {
-      log('info', `Playing default video: ${currentItem.video.title}`)
+      log('info', `Playing default video: ${currentItem.video.title} (index ${currentLoopIndex.value}/${playbackLoop.value.length})`)
       await playVideo(currentItem.video, 'default')
     }
     
-    // Move to next item in loop
+    // Move to next item in loop with proper rotation
     currentLoopIndex.value = (currentLoopIndex.value + 1) % playbackLoop.value.length
+    
+    // Log when we complete a full cycle
+    if (currentLoopIndex.value === 0) {
+      log('info', 'Completed full rotation through all ads, starting again from first ad')
+    }
     
   } catch (error) {
     log('error', `Failed to play next in loop: ${error.message}`)
@@ -1096,6 +1225,7 @@ const getCurrentTimeSlot = () => {
   const now = new Date()
   const currentTime = formatTime(now.getHours(), now.getMinutes())
   
+  // Find the current time slot based on the manifest
   for (const slot of manifest.value.time_slots) {
     if (isTimeInSlot(currentTime, slot.start_time, slot.end_time)) {
       return slot
@@ -1106,7 +1236,24 @@ const getCurrentTimeSlot = () => {
 }
 
 const isTimeInSlot = (currentTime, startTime, endTime) => {
-  return currentTime >= startTime && currentTime <= endTime
+  // Handle time comparison properly
+  const current = parseTime(currentTime)
+  const start = parseTime(startTime)
+  const end = parseTime(endTime)
+  
+  // Handle overnight slots (e.g., 22:00 to 06:00)
+  if (end < start) {
+    return current >= start || current <= end
+  }
+  
+  // Normal time range
+  return current >= start && current <= end
+}
+
+// Helper function to parse time string into minutes for comparison
+const parseTime = (timeStr) => {
+  const [hours, minutes] = timeStr.split(':').map(Number)
+  return hours * 60 + minutes
 }
 
 const formatTime = (hours, minutes) => {
@@ -1129,14 +1276,16 @@ const checkActiveWindow = () => {
       // If we were showing black screen, stop it and resume playback
       if (isBlackScreenActive.value) {
         isBlackScreenActive.value = false
+        hideBlackScreen()
+        // Force restart of playback system
         setTimeout(() => {
-          startPlaybackLoop()
+          restartPlaybackSystem()
         }, 1000)
       }
     } else {
       log('info', 'Exiting active window - showing black screen')
       // Show black screen when exiting active window
-      showBlackScreen()
+      showBlackScreen(true) // true indicates power saving mode
     }
   }
   
@@ -1155,12 +1304,51 @@ const hideBlackScreen = () => {
   }
 }
 
+// Restart the entire playback system when waking up from black screen
+const restartPlaybackSystem = async () => {
+  try {
+    log('info', 'Restarting playback system after black screen wake-up')
+    
+    // Clear any existing intervals to avoid duplicates
+    if (balanceCheckInterval.value) {
+      clearInterval(balanceCheckInterval.value)
+    }
+    if (slotCheckInterval.value) {
+      clearInterval(slotCheckInterval.value)
+    }
+    
+    // Reload fresh data
+    await loadManifest()
+    await loadBrandBalances()
+    
+    // Reinitialize playback loop with fresh data
+    initializePlaybackLoop()
+    
+    // Start the playback loop
+    if (playbackLoop.value.length > 0) {
+      log('info', 'Starting playback after wake-up')
+      playNextInLoop()
+    } else {
+      log('warn', 'No videos available after wake-up, staying on black screen')
+      showBlackScreen(true)
+    }
+    
+    // Restart monitoring intervals
+    balanceCheckInterval.value = setInterval(loadBrandBalances, 5 * 60 * 1000)
+    startSlotMonitoring()
+    
+  } catch (error) {
+    log('error', `Failed to restart playback system: ${error.message}`)
+    showBlackScreen(true)
+  }
+}
+
 // Start monitoring active window changes
 const startActiveWindowMonitoring = () => {
-  // Check every minute
+  // Check every 30 seconds for more responsive wake-up
   activeWindowCheckInterval.value = setInterval(() => {
     checkActiveWindow()
-  }, 60000)
+  }, 30000)
   
   // Initial check
   checkActiveWindow()
@@ -1641,9 +1829,63 @@ const clearVideoCache = async () => {
   }
 }
 
+// Unified MQTT message handler for all MQTT topics
+function handleMqttMessage(topic, message, data) {
+  try {
+    // const data = typeof message === 'string' ? JSON.parse(message) : message
+    log('info', `MQTT message received on ${topic}: ${JSON.stringify(data)}`)
+    
+    // Handle different message types based on topic
+    if (topic.includes('recache')) {
+      handleRecacheTrigger(data)
+    } else if (topic.includes('perfume-trigger')) {
+      handlePerfumeAdTrigger(data)
+    } else if (topic.includes('video-assignment')) {
+      handleVideoAssignmentTrigger(data)
+    } else if (topic === "scentral/ads/slot/assignment") {
+      // Check if the machine_code matches this page's ID
+      if (data.machine_code === machineId.value) {
+        log('info', `Slot assignment event received for machine: ${machineId.value}`)
+        loadNewVideos()
+      }
+    }
+  } catch (error) {
+    log('error', `Failed to parse MQTT message: ${error.message}`)
+  }
+}
+
+function setupMqttHandler() {
+  try {
+    // Register unified MQTT handler for all topics
+    if ($mqtt && $mqtt.registerHandler) {
+      // $mqtt.registerHandler(machineId, handleMqttMessage);
+      $mqtt.registerHandler(machineId.value, handleMqttMessage)
+      log('info', `Registered unified MQTT handler for machine: ${machineId.value}`)
+      
+      // Subscribe to all required topics
+      subscribeToMqttTopics()
+    } else {
+      log('error', 'MQTT client or registerHandler method not available')
+    }
+  } catch (err) {
+    log('error', `Failed to setup MQTT handler: ${err.message}`)
+  }
+}
+
+function cleanupMqttHandler() {
+  try {
+    // Unregister unified MQTT handler when component unmounts
+    if ($mqtt && $mqtt.unregisterHandler) {
+      $mqtt.unregisterHandler(`video-player-${machineId.value}`)
+      log('info', `Unregistered MQTT handler for machine: ${machineId.value}`)
+    }
+  } catch (err) {
+    log('error', `Failed to cleanup MQTT handler: ${err.message}`)
+  }
+}
+
 // Main initialization
 const init = async () => {
-  console.log('testing');
   try {
     log('info', 'Initializing Scentral Video Player...')
     
@@ -1655,8 +1897,20 @@ const init = async () => {
     document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
     document.addEventListener('msfullscreenchange', handleFullscreenChange);
     
-    // Initialize MQTT connection
-    await initializeMQTT()
+    // Load slot times and check if current time is in range
+    const isInSlotRange = await loadStartAndEndSlotTime();
+    
+    // If current time is not in slot range, show black screen and stop initialization
+    if (isInSlotRange === false) {
+      log('info', 'Current time is outside slot range, showing black screen')
+      showBlackScreen(true)
+      isLoading.value = false
+      playbackStatus.value = 'Outside active hours'
+      return
+    }
+    
+    // Initialize MQTT connection using the global instance
+    setupMqttHandler()
     
     // Load initial manifest
     await loadManifest()
@@ -1706,11 +1960,12 @@ onBeforeUnmount(() => {
   if (activeWindowCheckInterval.value) {
     clearInterval(activeWindowCheckInterval.value)
   }
-  
-  // Cleanup MQTT connection
-  if (mqttClient.value && mqttClient.value.isConnected()) {
-    mqttClient.value.disconnect()
+  if (slotTimeCheckInterval.value) {
+    clearInterval(slotTimeCheckInterval.value)
   }
+  
+  // Cleanup MQTT handler
+  cleanupMqttHandler()
   
   // Remove fullscreen event listeners
   document.removeEventListener('fullscreenchange', handleFullscreenChange);

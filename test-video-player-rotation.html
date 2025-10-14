@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Player Rotation Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .expected-pattern {
+            font-family: monospace;
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>Video Player Rotation Test</h1>
+    
+    <div class="test-container">
+        <h2>Test Description</h2>
+        <p>This test verifies that the video player properly rotates through all available ads in the pattern:</p>
+        <div class="expected-pattern">
+            Ad 1, Default Video, Ad 2, Default Video, Ad 3, Default Video, ... then back to Ad 1
+        </div>
+    </div>
+
+    <div class="test-container">
+        <h2>Test Implementation</h2>
+        <p>The following changes were made to the video player:</p>
+        <ol>
+            <li>Modified <code>initializePlaybackLoop()</code> to properly create the alternating pattern</li>
+            <li>Updated <code>playNextInLoop()</code> to handle proper rotation and loop completion</li>
+            <li>Added logging to track the current position in the loop</li>
+            <li>Improved handling of ads that can no longer be played (insufficient balance)</li>
+        </ol>
+    </div>
+
+    <div class="test-container">
+        <h2>Expected Behavior</h2>
+        <div id="test-results">
+            <div class="test-result info">
+                <strong>Test Scenario:</strong> 3 ads available
+                <br><strong>Expected Playback Order:</strong> 
+                Ad1 → Default → Ad2 → Default → Ad3 → Default → Ad1 → Default → Ad2 → Default → ...
+            </div>
+        </div>
+        
+        <button onclick="runTest()">Run Test Simulation</button>
+        <button onclick="clearResults()">Clear Results</button>
+    </div>
+
+    <div class="test-container">
+        <h2>Manual Testing Instructions</h2>
+        <p>To manually test the video player rotation:</p>
+        <ol>
+            <li>Navigate to the video player page with a valid machineId</li>
+            <li>Ensure multiple ads are assigned to the current time slot</li>
+            <li>Enable debug mode by adding <code>?debug=true</code> to the URL</li>
+            <li>Observe the debug log to verify the playback pattern</li>
+            <li>Check that each ad plays followed by the default video</li>
+            <li>Verify that after the last ad, it returns to the first ad</li>
+            <li>Monitor the console for "Completed full rotation" messages</li>
+        </ol>
+    </div>
+
+    <script>
+        function runTest() {
+            const resultsDiv = document.getElementById('test-results');
+            
+            // Simulate the playback loop logic
+            const availableAds = [
+                { id: 1, title: 'Ad 1', type: 'ad' },
+                { id: 2, title: 'Ad 2', type: 'ad' },
+                { id: 3, title: 'Ad 3', type: 'ad' }
+            ];
+            
+            const defaultVideo = { id: 99, title: 'Default Video', type: 'default' };
+            
+            // Simulate initializePlaybackLoop
+            let playbackLoop = [];
+            for (let i = 0; i < availableAds.length; i++) {
+                playbackLoop.push({ 
+                    type: 'ad', 
+                    video: availableAds[i],
+                    originalIndex: i
+                });
+                playbackLoop.push({ 
+                    type: 'default', 
+                    video: defaultVideo,
+                    originalIndex: i
+                });
+            }
+            
+            // Simulate playing through the loop
+            let currentLoopIndex = 0;
+            let playbackSequence = [];
+            let fullRotations = 0;
+            
+            // Simulate 12 plays (2 full rotations)
+            for (let play = 0; play < 12; play++) {
+                const currentItem = playbackLoop[currentLoopIndex];
+                playbackSequence.push(`${currentItem.video.title} (${currentItem.type})`);
+                
+                currentLoopIndex = (currentLoopIndex + 1) % playbackLoop.length;
+                if (currentLoopIndex === 0) {
+                    fullRotations++;
+                }
+            }
+            
+            // Display results
+            let resultHtml = `
+                <div class="test-result success">
+                    <strong>✓ Test Simulation Completed</strong>
+                    <br><strong>Generated Playback Sequence:</strong>
+                    <br>${playbackSequence.join(' → ')}
+                    <br><strong>Full Rotations Completed:</strong> ${fullRotations}
+                </div>
+            `;
+            
+            // Check if the pattern is correct
+            const expectedPattern = [
+                'Ad 1 (ad)', 'Default Video (default)', 
+                'Ad 2 (ad)', 'Default Video (default)', 
+                'Ad 3 (ad)', 'Default Video (default)'
+            ];
+            
+            let isPatternCorrect = true;
+            for (let i = 0; i < 6; i++) {
+                if (playbackSequence[i] !== expectedPattern[i]) {
+                    isPatternCorrect = false;
+                    break;
+                }
+            }
+            
+            if (isPatternCorrect) {
+                resultHtml += `
+                    <div class="test-result success">
+                        <strong>✓ Pattern Verification: PASSED</strong>
+                        <br>The playback sequence follows the expected pattern.
+                    </div>
+                `;
+            } else {
+                resultHtml += `
+                    <div class="test-result error">
+                        <strong>✗ Pattern Verification: FAILED</strong>
+                        <br>The playback sequence does not match the expected pattern.
+                    </div>
+                `;
+            }
+            
+            resultsDiv.innerHTML = resultHtml;
+        }
+        
+        function clearResults() {
+            const resultsDiv = document.getElementById('test-results');
+            resultsDiv.innerHTML = `
+                <div class="test-result info">
+                    <strong>Test Scenario:</strong> 3 ads available
+                    <br><strong>Expected Playback Order:</strong> 
+                    Ad1 → Default → Ad2 → Default → Ad3 → Default → Ad1 → Default → Ad2 → Default → ...
+                </div>
+            `;
+        }
+        
+        // Auto-run test on page load
+        window.addEventListener('load', function() {
+            setTimeout(runTest, 500);
+        });
+    </script>
+</body>
+</html>

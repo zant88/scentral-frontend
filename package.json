@@ -23,7 +23,7 @@
     "chart.js": "^4.5.0",
     "css-select": "^5.2.2",
     "eslint": "^9.30.0",
-    "mqtt": "^5.14.0",
+    "mqtt": "^5.14.1",
     "nuxt": "^3.17.5",
     "sweetalert2": "^11.22.1",
     "typescript": "^5.8.3",

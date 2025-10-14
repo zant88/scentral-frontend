@@ -1097,7 +1097,7 @@ const filteredSlots = computed(() => {
   
   // Apply search filter
   if (searchQuery.value) {
-    result = result.filter(slot => 
+    result = result.filter(slot =>
       slot.name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
       (slot.start_time && slot.start_time.includes(searchQuery.value)) ||
       (slot.end_time && slot.end_time.includes(searchQuery.value))
@@ -1112,6 +1112,9 @@ const filteredSlots = computed(() => {
   } else if (currentFilter.value === 'general') {
     result = result.filter(slot => slot.allow_general)
   }
+  
+  // Sort slots based on current time
+  result = sortSlotsByCurrentTime(result)
   
   return result
 })
@@ -1136,6 +1139,92 @@ const filteredVideos = computed(() => {
 })
 
 // Methods
+const sortSlotsByCurrentTime = (slotsToSort) => {
+  if (!slotsToSort || slotsToSort.length === 0) return []
+  
+  // Get current time
+  const now = new Date()
+  const currentHour = now.getHours()
+  const currentMinute = now.getMinutes()
+  const currentTimeInMinutes = currentHour * 60 + currentMinute
+  
+  // Helper function to convert time string to minutes since midnight
+  const timeToMinutes = (timeString) => {
+    if (!timeString) return 0
+    
+    // Handle different time formats
+    let hours = 0, minutes = 0
+    
+    // Try to match HH:MM format
+    const timeMatch = timeString.match(/(\d{1,2}):(\d{2})(?::\d{2})?/)
+    if (timeMatch) {
+      hours = parseInt(timeMatch[1], 10)
+      minutes = parseInt(timeMatch[2], 10)
+    } else {
+      // Fallback for other formats
+      const date = new Date(`2000-01-01 ${timeString}`)
+      if (!isNaN(date.getTime())) {
+        hours = date.getHours()
+        minutes = date.getMinutes()
+      }
+    }
+    
+    return hours * 60 + minutes
+  }
+  
+  // Categorize slots
+  const currentSlots = []
+  const upcomingSlots = []
+  const pastSlots = []
+  
+  slotsToSort.forEach(slot => {
+    const startTimeMinutes = timeToMinutes(slot.start_time)
+    const endTimeMinutes = timeToMinutes(slot.end_time)
+    
+    // Handle slots that cross midnight (end time < start time)
+    let isCurrent = false
+    let isPast = false
+    
+    if (endTimeMinutes > startTimeMinutes) {
+      // Normal slot (doesn't cross midnight)
+      if (currentTimeInMinutes >= startTimeMinutes && currentTimeInMinutes < endTimeMinutes) {
+        isCurrent = true
+      } else if (currentTimeInMinutes >= endTimeMinutes) {
+        isPast = true
+      }
+    } else {
+      // Slot crosses midnight
+      if (currentTimeInMinutes >= startTimeMinutes || currentTimeInMinutes < endTimeMinutes) {
+        isCurrent = true
+      } else if (currentTimeInMinutes >= endTimeMinutes && currentTimeInMinutes < startTimeMinutes) {
+        isPast = true
+      }
+    }
+    
+    if (isCurrent) {
+      currentSlots.push(slot)
+    } else if (isPast) {
+      pastSlots.push(slot)
+    } else {
+      upcomingSlots.push(slot)
+    }
+  })
+  
+  // Sort each category by start time
+  const sortByStartTime = (a, b) => {
+    const aStart = timeToMinutes(a.start_time)
+    const bStart = timeToMinutes(b.start_time)
+    return aStart - bStart
+  }
+  
+  currentSlots.sort(sortByStartTime)
+  upcomingSlots.sort(sortByStartTime)
+  pastSlots.sort(sortByStartTime)
+  
+  // Combine: current slots first, then upcoming, then past
+  return [...currentSlots, ...upcomingSlots, ...pastSlots]
+}
+
 const fetchSlots = async () => {
   try {
     const accessToken = localStorage.getItem('access_token')
