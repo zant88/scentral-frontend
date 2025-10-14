@@ -82,6 +82,14 @@
 /**
  * Scentral Video Player for Tizen Smart TV
  * Handles advertisement playback with time slots, MQTT integration, and caching
+ * Updated flow:
+ * 1. Load URL with machineId parameter
+ * 2. Fetch all videos with time slots and balance information
+ * 3. Cache all videos
+ * 4. Play in pattern: ad1, default, ad2, default, ad3...
+ * 5. Log and deduct balance when ads are played
+ * 6. Check current time for slot-based playback
+ * 7. Show black screen outside active hours (08:00-23:00)
  */
 
 import { ref, reactive, onMounted, onBeforeUnmount, onBeforeMount } from 'vue'
@@ -133,6 +141,13 @@ const cachingComponentRef = ref(null)
 const isFullscreen = ref(false)
 const slotAssignments = ref([])
 const lastSlotCheckTime = ref(null)
+
+// New state for enhanced functionality
+const isBlackScreenActive = ref(false)
+const isActiveWindow = ref(false) // 08:00-23:00 active window
+const slotCheckInterval = ref(null)
+const balanceCheckInterval = ref(null)
+const activeWindowCheckInterval = ref(null)
 
 // Configuration functions
 const getMachineId = () => {
@@ -542,6 +557,32 @@ const scheduleMqttReconnect = () => {
   }, 5000)
 }
 
+// Helper functions to find videos and slots in manifest
+const findVideoInManifest = (videoId) => {
+  if (!manifest.value) return null
+  
+  // Check general ads
+  const generalAd = manifest.value.general_ads.find(ad => ad.id === videoId)
+  if (generalAd) return generalAd
+  
+  // Check perfume ads
+  const perfumeAd = manifest.value.perfume_ads.find(ad => ad.id === videoId)
+  if (perfumeAd) return perfumeAd
+  
+  // Check default video
+  if (manifest.value.default_video && manifest.value.default_video.id === videoId) {
+    return manifest.value.default_video
+  }
+  
+  return null
+}
+
+const findSlotInManifest = (slotId) => {
+  if (!manifest.value) return null
+  
+  return manifest.value.time_slots.find(slot => slot.id === slotId) || null
+}
+
 // Manifest and caching functions
 const loadManifest = async () => {
   try {
@@ -852,7 +893,13 @@ const initializePlaybackLoop = () => {
   // Get current slot
   const currentSlotData = getCurrentTimeSlot()
   
-  // Add general ads with default video in between
+  // Check if we're in active window
+  if (!isActiveWindow.value) {
+    log('info', 'Outside active window, not initializing playback loop')
+    return
+  }
+  
+  // Filter ads based on current time slot and balance
   const availableAds = manifest.value.general_ads.filter(ad => {
     // Check if video is assigned to current slot
     if (currentSlotData && currentSlotData.allow_general) {
@@ -864,9 +911,11 @@ const initializePlaybackLoop = () => {
   if (availableAds.length === 0) {
     log('warn', 'No available general ads with sufficient balance for current slot')
     if (manifest.value.default_video) {
+      // Only play default video if no ads available
       playbackLoop.value.push({ type: 'default', video: manifest.value.default_video })
     }
   } else {
+    // Create the alternating pattern: ad1, default, ad2, default, ad3, default...
     availableAds.forEach(ad => {
       playbackLoop.value.push({ type: 'ad', video: ad })
       if (manifest.value.default_video) {
@@ -880,20 +929,44 @@ const initializePlaybackLoop = () => {
 }
 
 const startPlaybackLoop = () => {
+  // Check if we're in active window before starting
+  if (!checkActiveWindow()) {
+    log('info', 'Outside active window, showing black screen')
+    showBlackScreen(true)
+    return
+  }
+  
+  hideBlackScreen()
   updatePerfumeTimeToday()
   loadBrandBalances() // Load initial balances
   initializePlaybackLoop()
-  playNextInLoop()
+  
+  if (playbackLoop.value.length > 0) {
+    playNextInLoop()
+  } else {
+    log('warn', 'No videos in playback loop, showing black screen')
+    showBlackScreen(true)
+  }
   
   // Refresh balances every 5 minutes
-  setInterval(loadBrandBalances, 5 * 60 * 1000)
+  balanceCheckInterval.value = setInterval(loadBrandBalances, 5 * 60 * 1000)
   
   // Start slot monitoring
   startSlotMonitoring()
+  
+  // Start active window monitoring
+  startActiveWindowMonitoring()
 }
 
 const playNextInLoop = async () => {
   try {
+    // Check if we're still in active window
+    if (!isActiveWindow.value) {
+      log('info', 'Outside active window, stopping playback')
+      showBlackScreen(true)
+      return
+    }
+    
     if (isPerfumeAdPlaying.value) {
       log('info', 'Perfume ad is playing, pausing loop')
       return
@@ -904,7 +977,7 @@ const playNextInLoop = async () => {
       initializePlaybackLoop()
       if (playbackLoop.value.length === 0) {
         log('error', 'No videos available to play')
-        showBlackScreen()
+        showBlackScreen(true)
         return
       }
     }
@@ -912,25 +985,28 @@ const playNextInLoop = async () => {
     const currentItem = playbackLoop.value[currentLoopIndex.value]
     
     // Check if we can still play this video (balance might have changed)
-    if (currentItem.type === 'ad' && !canPlayVideo(currentItem.video)) {
-      log('info', `Video ${currentItem.video.title} can no longer be played due to insufficient balance`)
-      
-      // Remove this item from the loop and reinitialize
-      playbackLoop.value.splice(currentLoopIndex.value, 1)
-      if (playbackLoop.value.length === 0) {
-        initializePlaybackLoop()
-      }
-      currentLoopIndex.value = currentLoopIndex.value % playbackLoop.value.length
-      playNextInLoop()
-      return
-    }
-    
-    // Check slot assignment before playing
     if (currentItem.type === 'ad') {
+      // Check balance first
+      if (!canPlayVideo(currentItem.video)) {
+        log('info', `Video ${currentItem.video.title} can no longer be played due to insufficient balance`)
+        
+        // Remove this item from the loop and reinitialize
+        playbackLoop.value.splice(currentLoopIndex.value, 1)
+        if (playbackLoop.value.length === 0) {
+          initializePlaybackLoop()
+        }
+        currentLoopIndex.value = currentLoopIndex.value % playbackLoop.value.length
+        playNextInLoop()
+        return
+      }
+      
+      // Check slot assignment
       const currentSlotData = getCurrentTimeSlot()
       if (!currentSlotData || !currentSlotData.allow_general || !isVideoAssignedToCurrentSlot(currentItem.video, currentSlotData)) {
-        log('info', 'Ad is not assigned to current slot, playing default video')
+        log('info', `Ad ${currentItem.video.title} is not assigned to current slot, playing default video`)
         await playDefaultVideo()
+        // Move to next item
+        currentLoopIndex.value = (currentLoopIndex.value + 1) % playbackLoop.value.length
         return
       }
     }
@@ -939,7 +1015,7 @@ const playNextInLoop = async () => {
     
     if (currentItem.type === 'ad') {
       const currentSlotData = getCurrentTimeSlot()
-      log('info', `Playing ad: ${currentItem.video.title}`)
+      log('info', `Playing ad: ${currentItem.video.title} in slot ${currentSlotData?.name || 'Unknown'}`)
       await playVideo(currentItem.video, 'general', currentSlotData)
     } else {
       log('info', `Playing default video: ${currentItem.video.title}`)
@@ -957,7 +1033,7 @@ const playNextInLoop = async () => {
       await playDefaultVideo()
     } catch (defaultError) {
       log('error', `Failed to play default video: ${defaultError.message}`)
-      showBlackScreen()
+      showBlackScreen(true)
     }
   }
 }
@@ -1035,6 +1111,59 @@ const isTimeInSlot = (currentTime, startTime, endTime) => {
 
 const formatTime = (hours, minutes) => {
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
+}
+
+// Check if current time is within active window (08:00-23:00)
+const checkActiveWindow = () => {
+  const now = new Date()
+  const currentHour = now.getHours()
+  const wasActive = isActiveWindow.value
+  
+  // Active window is from 08:00 to 23:00 (8 AM to 11 PM)
+  isActiveWindow.value = currentHour >= 8 && currentHour < 23
+  
+  // Log state changes
+  if (wasActive !== isActiveWindow.value) {
+    if (isActiveWindow.value) {
+      log('info', 'Entering active window - starting playback')
+      // If we were showing black screen, stop it and resume playback
+      if (isBlackScreenActive.value) {
+        isBlackScreenActive.value = false
+        setTimeout(() => {
+          startPlaybackLoop()
+        }, 1000)
+      }
+    } else {
+      log('info', 'Exiting active window - showing black screen')
+      // Show black screen when exiting active window
+      showBlackScreen()
+    }
+  }
+  
+  return isActiveWindow.value
+}
+
+// Hide black screen when entering active hours
+const hideBlackScreen = () => {
+  if (isBlackScreenActive.value) {
+    isBlackScreenActive.value = false
+    const videoElement = document.getElementById('videoPlayer')
+    if (videoElement) {
+      videoElement.style.backgroundColor = 'transparent'
+    }
+    log('info', 'Black screen deactivated - entering active hours')
+  }
+}
+
+// Start monitoring active window changes
+const startActiveWindowMonitoring = () => {
+  // Check every minute
+  activeWindowCheckInterval.value = setInterval(() => {
+    checkActiveWindow()
+  }, 60000)
+  
+  // Initial check
+  checkActiveWindow()
 }
 
 const getAvailableGeneralAds = (slot) => {
@@ -1237,16 +1366,35 @@ const handleVideoError = async (error) => {
   }
 }
 
-const showBlackScreen = () => {
+const showBlackScreen = (isPowerSaving = false) => {
+  isBlackScreenActive.value = true
   const videoElement = document.getElementById('videoPlayer')
-  videoElement.src = ''
-  videoElement.load()
-  playbackStatus.value = 'No content'
+  if (videoElement) {
+    videoElement.src = ''
+    videoElement.load()
+    videoElement.style.backgroundColor = '#000'
+  }
   
-  // Try again after 30 seconds
-  setTimeout(() => {
-    playNextInLoop()
-  }, 30000)
+  if (isPowerSaving) {
+    playbackStatus.value = 'Power saving mode'
+    
+    // Stop all playback loops
+    if (slotCheckInterval.value) {
+      clearInterval(slotCheckInterval.value)
+      slotCheckInterval.value = null
+    }
+    
+    log('info', 'Black screen activated - outside active hours')
+  } else {
+    playbackStatus.value = 'No content'
+    
+    // Try again after 30 seconds for regular black screen
+    setTimeout(() => {
+      if (!isPowerSaving) {
+        playNextInLoop()
+      }
+    }, 30000)
+  }
 }
 
 // Logging and analytics
@@ -1427,46 +1575,45 @@ const handleFullscreenChange = () => {
   }
 }
 
-// Load new videos function
-const loadNewVideos = async () => {
+// Load new videos function - now performs a full browser reload with cache clearing
+const loadNewVideos = () => {
+  log('info', 'Loading new videos - performing full reload with cache clearing...')
+  
+  // Show loading state immediately
+  isLoading.value = true
+  loadingText.value = 'Reloading with fresh cache...'
+  
+  // Clear all local caches before reload
   try {
-    log('info', 'Loading new videos - clearing cache and reloading manifest...')
+    // Clear localStorage
+    localStorage.clear()
     
-    // Show loading state
-    isLoading.value = true
-    loadingText.value = 'Clearing cache and loading new videos...'
+    // Clear sessionStorage
+    sessionStorage.clear()
     
-    // Stop current video playback
-    const videoElement = document.getElementById('videoPlayer')
-    if (videoElement) {
-      videoElement.pause()
-      videoElement.src = ''
-      videoElement.load()
+    // Clear IndexedDB caches
+    if ('caches' in window) {
+      caches.keys().then(cacheNames => {
+        return Promise.all(
+          cacheNames.map(cacheName => caches.delete(cacheName))
+        )
+      }).then(() => {
+        log('info', 'All browser caches cleared successfully')
+      })
     }
     
-    // Clear IndexedDB cache
-    await clearVideoCache()
+    // Add timestamp to URL to prevent browser caching
+    const timestamp = Date.now()
+    const url = new URL(window.location)
+    url.searchParams.set('t', timestamp)
     
-    // Reset state variables
-    currentVideo.value = null
-    currentSlot.value = null
-    isPerfumeAdPlaying.value = false
-    isPlayingAd.value = false
-    playbackLoop.value = []
-    currentLoopIndex.value = 0
-    retryCount.value = 0
-    
-    // Reload manifest and slot assignments
-    await loadManifest()
-    
-    // Restart playback loop
-    startPlaybackLoop()
-    
-    log('info', 'New videos loaded successfully')
+    // Force reload the page with cache bypass
+    window.location.href = url.toString()
     
   } catch (error) {
-    log('error', `Failed to load new videos: ${error.message}`)
-    showErrorDialog(`Failed to load new videos: ${error.message}`)
+    log('error', `Error clearing caches: ${error.message}`)
+    // Fallback to simple reload if cache clearing fails
+    window.location.reload(true)
   }
 }
 
@@ -1549,6 +1696,17 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  // Cleanup all intervals
+  if (slotCheckInterval.value) {
+    clearInterval(slotCheckInterval.value)
+  }
+  if (balanceCheckInterval.value) {
+    clearInterval(balanceCheckInterval.value)
+  }
+  if (activeWindowCheckInterval.value) {
+    clearInterval(activeWindowCheckInterval.value)
+  }
+  
   // Cleanup MQTT connection
   if (mqttClient.value && mqttClient.value.isConnected()) {
     mqttClient.value.disconnect()

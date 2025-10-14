@@ -21,6 +21,8 @@
                 title="Delete Selected"><i class="fa fa-trash"></i></a>
               <a href="javascript:void(0)" @click="navigateTo('/admin/videos/create')" class="btn btn-icon btn-primary note-btn" data-toggle="tooltip"
                 title="Upload New"><i class="fas fa-plus"></i></a>
+             
+              
             </div>
           </client-only>
           <div class="right-action">
@@ -103,30 +105,37 @@
                     {{ item.priority?.toUpperCase() || 'MEDIUM' }}
                   </span>
                 </td>
-                <td class="actions-cell">
-                  <div class="btn-group">
-                    <button @click="playVideo(item)" class="btn btn-sm btn-info" title="Play Video">
-                      <i class="fas fa-play"></i>
-                    </button>
-                    <button @click="navigateTo(`/admin/videos/update/${item.id}`)" class="btn btn-sm btn-warning" title="Edit">
-                      <i class="fas fa-edit"></i>
-                    </button>
-                    <button 
-                      v-if="item.status === 'active'" 
-                      @click="deactivateVideo(item)" 
-                      class="btn btn-sm btn-danger" 
-                      title="Inactivate"
-                    >
-                      <i class="fas fa-times"></i>
-                    </button>
-                    <button 
-                      v-if="item.status === 'inactive'" 
-                      @click="activateVideo(item)" 
-                      class="btn btn-sm btn-success" 
-                      title="Activate"
-                    >
-                      <i class="fas fa-check"></i>
-                    </button>
+                <td>
+                  <div class="dropdown">
+                    <a href="#" data-toggle="dropdown" class="btn btn-sm btn-outline-primary dropdown-toggle">Actions</a>
+                    <div class="dropdown-menu">
+                      <a href="#" class="dropdown-item" @click="playVideo(item)">
+                        <i class="fas fa-play mr-2"></i>Play Video
+                      </a>
+                      <a href="#" class="dropdown-item" @click="viewVideoLogs(item)">
+                        <i class="fas fa-list mr-2"></i>View Logs
+                      </a>
+                      <a href="#" class="dropdown-item" @click="navigateTo(`/admin/videos/update/${item.id}`)">
+                        <i class="fas fa-edit mr-2"></i>Edit
+                      </a>
+                      <div class="dropdown-divider"></div>
+                      <a href="#"
+                         v-if="item.status === 'active'"
+                         class="dropdown-item"
+                         @click="deactivateVideo(item)">
+                        <i class="fas fa-times mr-2"></i>Inactivate
+                      </a>
+                      <a href="#"
+                         v-if="item.status === 'inactive'"
+                         class="dropdown-item"
+                         @click="activateVideo(item)">
+                        <i class="fas fa-check mr-2"></i>Activate
+                      </a>
+                      <div class="dropdown-divider"></div>
+                      <a href="#" class="dropdown-item text-danger" @click="deleteVideo(item)">
+                        <i class="fas fa-trash mr-2"></i>Delete
+                      </a>
+                    </div>
                   </div>
                 </td>
               </tr>
@@ -269,6 +278,100 @@
       </div>
     </div>
   </section>
+  <!-- Video Logs Modal -->
+  <div v-if="showVideoLogsModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeVideoLogsModal">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Playback Logs for {{ currentVideoForLogs?.title }}</h5>
+          <button type="button" class="btn-close" @click="closeVideoLogsModal"></button>
+        </div>
+        <div class="modal-body">
+          <!-- Filters -->
+          <div class="row mb-3">
+            <div class="col-md-3">
+              <select v-model="logsFilter.device" @change="getVideoLogs" class="form-control">
+                <option value="">All Devices</option>
+                <option v-for="device in uniqueDevices" :key="device" :value="device">
+                  {{ device }}
+                </option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <select v-model="logsFilter.status" @change="getVideoLogs" class="form-control">
+                <option value="">All Status</option>
+                <option value="completed">Completed</option>
+                <option value="interrupted">Interrupted</option>
+                <option value="error">Error</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <input type="date" v-model="logsFilter.startDate" @change="getVideoLogs" class="form-control" />
+            </div>
+            <div class="col-md-3">
+              <input type="date" v-model="logsFilter.endDate" @change="getVideoLogs" class="form-control" />
+            </div>
+          </div>
+
+          <!-- Logs Table -->
+          <div class="table-responsive logs-table-container">
+            <table class="table table-striped">
+              <thead>
+                <tr>
+                  <th>Played At</th>
+                  <th>Device</th>
+                  <th>Duration</th>
+                  <th>Played</th>
+                  <th>Status</th>
+                  <th>Cost</th>
+                  <th>Credit Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="log in videoLogs" :key="log.id">
+                  <td>{{ formatDateTime(log.played_at) }}</td>
+                  <td>{{ log.device_id }}</td>
+                  <td>{{ formatDuration(log.duration) }}</td>
+                  <td>{{ formatDuration(log.duration_played) }}</td>
+                  <td>
+                    <span :class="getStatusBadgeClass(log.status)" class="badge">
+                      {{ log.status?.toUpperCase() || 'UNKNOWN' }}
+                    </span>
+                  </td>
+                  <td>{{ log.cost || 0 }} balance</td>
+                  <td>
+                    <span :class="getCreditStatusBadgeClass(log.credit_deduction_status)" class="badge">
+                      {{ log.credit_deduction_status?.toUpperCase() || 'UNKNOWN' }}
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-if="videoLogs.length === 0" class="text-center py-3">
+              <p class="text-muted">No playback logs found for this video</p>
+            </div>
+          </div>
+
+          <!-- Pagination -->
+          <div class="d-flex flex-column align-items-center mt-3">
+            <div class="text-muted mb-2">
+              Showing {{ videoLogs.length }} logs
+            </div>
+            <div class="btn-group">
+              <button
+                class="btn btn-sm btn-outline-primary"
+                @click="loadMoreLogs"
+                :disabled="loadingMoreLogs || !hasMoreLogs"
+              >
+                <i class="fas fa-plus mr-1"></i>
+                Load More
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -291,6 +394,14 @@ const isCreateUpdate = ref(false);
 const isEdited = ref(false);
 const isVideoModal = ref(false);
 const currentVideo = ref(null);
+const currentVideoForLogs = ref(null);
+const showVideoLogsModal = ref(false);
+const videoLogs = ref([]);
+const uniqueDevices = ref([]);
+const loadingMoreLogs = ref(false);
+const logsLimit = ref(20);
+const logsOffset = ref(0);
+const hasMoreLogs = ref(true);
 const $toast = useToast();
 const querySearch = ref('');
 const filterBrand = ref('');
@@ -298,6 +409,14 @@ const filterType = ref('');
 const filterStatus = ref('');
 const sortBy = ref('created_at');
 const anyChecked = computed(() => checkedItems.value.length > 0);
+
+// Video logs filter
+const logsFilter = ref({
+  device: '',
+  status: '',
+  startDate: '',
+  endDate: ''
+});
 
 // Form variables
 const videoTitle = ref('');
@@ -607,6 +726,164 @@ const deactivateVideo = async (item) => {
   }
 }
 
+// Video logs functions
+const viewVideoLogs = async (item) => {
+  currentVideoForLogs.value = item;
+  showVideoLogsModal.value = true;
+  
+  // Reset filters
+  logsFilter.value = {
+    device: '',
+    status: '',
+    startDate: '',
+    endDate: ''
+  };
+  
+  // Set default date range to last 7 days
+  const today = new Date();
+  const weekAgo = new Date(today);
+  weekAgo.setDate(today.getDate() - 7);
+  logsFilter.value.endDate = today.toISOString().split('T')[0];
+  logsFilter.value.startDate = weekAgo.toISOString().split('T')[0];
+  
+  await getVideoLogs();
+}
+
+const closeVideoLogsModal = () => {
+  showVideoLogsModal.value = false;
+  currentVideoForLogs.value = null;
+  videoLogs.value = [];
+  uniqueDevices.value = [];
+  logsOffset.value = 0;
+  hasMoreLogs.value = true;
+}
+
+const getVideoLogs = async (resetOffset = true) => {
+  if (!currentVideoForLogs.value) return;
+  
+  // Reset offset if this is a new search (filter changed)
+  if (resetOffset) {
+    logsOffset.value = 0;
+    videoLogs.value = [];
+  }
+  
+  const accessToken = localStorage.getItem('access_token');
+  let url = `${apiUrl}/api/analytics/playback-logs?video_id=${currentVideoForLogs.value.id}&limit=${logsLimit.value}&offset=${logsOffset.value}`;
+  
+  // Add filters to URL
+  if (logsFilter.value.device) {
+    url += `&device_id=${logsFilter.value.device}`;
+  }
+  if (logsFilter.value.status) {
+    url += `&status=${logsFilter.value.status}`;
+  }
+  if (logsFilter.value.startDate) {
+    url += `&start_date=${logsFilter.value.startDate}T00:00:00Z`;
+  }
+  if (logsFilter.value.endDate) {
+    url += `&end_date=${logsFilter.value.endDate}T23:59:59Z`;
+  }
+  
+  console.log('Fetching video logs from URL:', url);
+  
+  try {
+    const response = await fetchWithAuth(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+    });
+    
+    console.log('Response status:', response.status);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log('Response data:', data);
+    
+    if (data.success) {
+      const newLogs = data.data || [];
+      
+      if (resetOffset) {
+        videoLogs.value = newLogs;
+      } else {
+        videoLogs.value = [...videoLogs.value, ...newLogs];
+      }
+      
+      // Check if there are more logs to load
+      hasMoreLogs.value = newLogs.length === logsLimit.value;
+      
+      // Extract unique devices for filter dropdown
+      const devices = [...new Set(videoLogs.value.map(log => log.device_id))];
+      uniqueDevices.value = devices;
+      
+      if (videoLogs.value.length === 0) {
+        $toast.info('No playback logs found for this video in the selected date range', { duration: 5000, position: 'top-right' });
+      }
+    } else {
+      $toast.error(data.message || 'Failed to fetch video logs', { duration: 5000, position: 'top-right' });
+    }
+  } catch (error) {
+    console.error('Error fetching video logs:', error);
+    $toast.error(`Failed to fetch video logs: ${error.message}`, { duration: 5000, position: 'top-right' });
+  }
+}
+
+const loadMoreLogs = async () => {
+  if (!currentVideoForLogs.value || loadingMoreLogs.value || !hasMoreLogs.value) return;
+  
+  loadingMoreLogs.value = true;
+  logsOffset.value += logsLimit.value; // Increase offset to load next page
+  
+  try {
+    await getVideoLogs(false); // Don't reset offset when loading more
+  } finally {
+    loadingMoreLogs.value = false;
+  }
+}
+
+const deleteVideo = async (item) => {
+  Swal.fire({
+    title: 'Are you sure?',
+    text: "You won't be able to revert this!",
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Yes, delete it!'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      // Check if the item is already in checkedItems
+      const wasChecked = checkedItems.value.includes(item.id);
+      
+      // If not checked, add it to checkedItems temporarily for deletion
+      if (!wasChecked) {
+        checkedItems.value = [item.id];
+      }
+      
+      deleteData();
+    }
+  })
+}
+
+// Utility functions for video logs
+const formatDateTime = (dateString) => {
+  if (!dateString) return 'N/A';
+  const date = new Date(dateString);
+  return date.toLocaleString();
+}
+
+const getCreditStatusBadgeClass = (status) => {
+  switch (status) {
+    case 'success': return 'badge-success';
+    case 'failed': return 'badge-danger';
+    case 'pending': return 'badge-warning';
+    case 'skipped': return 'badge-info';
+    default: return 'badge-secondary';
+  }
+}
+
 // Function to handle video source URL construction
 const getVideoSrc = (filePath) => {
   if (!filePath) return '';
@@ -672,4 +949,13 @@ const getVideoSrc = (filePath) => {
 .badge-danger { background-color: #dc3545; }
 .badge-info { background-color: #17a2b8; }
 .badge-secondary { background-color: #6c757d; }
+
+.logs-table-container {
+  overflow-x: auto;
+  max-height: 400px;
+}
+
+.logs-table-container table {
+  min-width: 800px;
+}
 </style>
