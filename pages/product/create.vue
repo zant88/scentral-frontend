@@ -12,6 +12,7 @@ const productBrand = ref('');
 const productSKU = ref('');
 const productBarcode = ref('');
 const productDescription = ref('');
+const productNote = ref('');
 const productActive = ref(true);
 const brandList = ref([]);
 const categoryList = ref([]);
@@ -26,7 +27,7 @@ const fileInput = ref(null);
 const triggerFileInput = () => { fileInput.value.click(); };
 const onDragOver = () => { isDragOver.value = true; };
 const onDragLeave = () => { isDragOver.value = false; };
-const ertonDrop = (e) => {
+const onDrop = (e) => {
   isDragOver.value = false;
   const file = e.dataTransfer.files[0];
   handleImageFile(file);
@@ -98,6 +99,7 @@ const createData = async () => {
     formData.append('barcode', productBarcode.value);
     formData.append('volume', volume.value);
     formData.append('description', productDescription.value);
+    formData.append('note', productNote.value);
     formData.append('is_active', productActive.value);
     if (imageFile.value) {
       formData.append('image', imageFile.value);
@@ -191,6 +193,10 @@ onMounted(() => {
                     <div class="mb-3">
                       <label for="productDescription" class="form-label">Description</label>
                       <textarea class="form-control" id="productDescription" v-model="productDescription"></textarea>
+                    </div>
+                    <div class="mb-3">
+                      <label for="productNote" class="form-label">Note</label>
+                      <textarea class="form-control" id="productNote" v-model="productNote"></textarea>
                     </div>
                     <div class="mb-3">
                       <label for="productActive" class="form-label">Active</label>

@@ -18,6 +18,10 @@ const dropdownRef = ref(null);
 const ajaxProductList = ref([]);
 const loadingProducts = ref(false);
 const pricePerSpray = ref(0);
+const showMachineModal = ref(false);
+const deviceList = ref([]);
+const selectedDeviceId = ref("");
+const loadingDevices = ref(false);
 let searchTimeout = null;
 
 const selectedProduct = computed(() => {
@@ -44,6 +48,68 @@ const fetchAssignedProducts = async () => {
     }
   } catch (e) {
     $toast.error('Failed to fetch assigned products');
+  }
+};
+
+const fetchDeviceList = async () => {
+  loadingDevices.value = true;
+  try {
+    const response = await fetchWithAuth(`${apiUrl}/api/device/`);
+    const data = await response.json();
+    if (data.success) {
+      deviceList.value = data.data.filter(device => device.id !== Number(deviceId));
+    } else {
+      deviceList.value = [];
+      $toast.error(data.message || 'Failed to fetch devices');
+    }
+  } catch (e) {
+    deviceList.value = [];
+    $toast.error('Failed to fetch devices');
+  } finally {
+    loadingDevices.value = false;
+  }
+};
+
+const openMachineModal = () => {
+  showMachineModal.value = true;
+  selectedDeviceId.value = "";
+  fetchDeviceList();
+};
+
+const copyFromMachine = async () => {
+  if (!selectedDeviceId.value) {
+    $toast.error('Please select a machine');
+    return;
+  }
+  
+  try {
+    const response = await fetchWithAuth(`${apiUrl}/api/device/${selectedDeviceId.value}/products`);
+    const data = await response.json();
+    if (data.success) {
+      // Clear current assigned products
+      assignedProducts.value = [];
+      
+      // Add products from selected machine
+      data.data.forEach(mp => {
+        assignedProducts.value.push({
+          product_id: mp.product_id,
+          product: mp.product,
+          slot: mp.slot || 1,
+          spray_amount: mp.spray_amount || 0,
+          min_volume: mp.min_volume || 0,
+          price_per_spray: mp.price_per_spray || 0,
+          background_color: mp.background_color || '#000000',
+          is_from_server: false
+        });
+      });
+      
+      showMachineModal.value = false;
+      $toast.success('Products copied successfully!');
+    } else {
+      $toast.error(data.message || 'Failed to copy products');
+    }
+  } catch (e) {
+    $toast.error('Failed to copy products');
   }
 };
 
@@ -299,6 +365,11 @@ watch(() => dropdownOpen.value, (open) => {
                 <button class="btn btn-success" @click="addProduct" :disabled="!selectedProductId"><i class="fas fa-plus"></i></button>
               </div>
             </div>
+            <div class="mt-2">
+              <button class="btn btn-info" @click="openMachineModal">
+                <i class="fas fa-copy"></i> Copy from Existing Machine
+              </button>
+            </div>
           </div>
           <table class="table table-striped mt-4">
             <thead>
@@ -339,6 +410,46 @@ watch(() => dropdownOpen.value, (open) => {
       </div>
     </div>
   </section>
+
+  <!-- Machine Selection Modal -->
+  <div v-if="showMachineModal" class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Select Machine to Copy From</h5>
+          <button type="button" class="btn-close" @click="showMachineModal = false"></button>
+        </div>
+        <div class="modal-body">
+          <div v-if="loadingDevices" class="text-center p-4">
+            <i class="fas fa-spinner fa-spin"></i> Loading machines...
+          </div>
+          <div v-else-if="deviceList.length === 0" class="text-center p-4 text-muted">
+            No other machines available to copy from.
+          </div>
+          <div v-else>
+            <div class="form-group">
+              <label for="machine-select">Select Machine</label>
+              <select v-model="selectedDeviceId" class="form-control">
+                <option value="">Choose a machine...</option>
+                <option v-for="device in deviceList" :key="device.id" :value="device.id">
+                  {{ device.code }} - {{ device.machine_code }} ({{ device.position }})
+                </option>
+              </select>
+            </div>
+            <div v-if="selectedDeviceId" class="alert alert-info mt-3">
+              <i class="fas fa-info-circle"></i> This will replace all current products with the configuration from the selected machine.
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @click="showMachineModal = false">Cancel</button>
+          <button type="button" class="btn btn-primary" @click="copyFromMachine" :disabled="!selectedDeviceId || loadingDevices">
+            <i class="fas fa-copy"></i> Copy Configuration
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <style scoped>

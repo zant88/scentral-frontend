@@ -15,7 +15,7 @@
               <input class="check-all" type="checkbox" @change="toggleAll" />
               <a href="#" class="btn btn-icon btn-danger note-btn" @click="deleteItem" v-if="anyChecked" data-toggle="tooltip"
                 title="Delete Selected"><i class="fa fa-trash"></i></a>
-              <a href="#" @click="showAdd" class="btn btn-icon btn-primary note-btn" data-toggle="tooltip"
+              <a href="javascript:void(0)" @click="navigateTo('/brand/create')" class="btn btn-icon btn-primary note-btn" data-toggle="tooltip"
                 title="Add New"><i class="fas fa-plus"></i></a>
             </div>
           </client-only>

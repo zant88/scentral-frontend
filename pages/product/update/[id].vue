@@ -15,6 +15,7 @@ const productBrand = ref('');
 const productSKU = ref('');
 const productBarcode = ref('');
 const productDescription = ref('');
+const productNote = ref('');
 const productActive = ref(true);
 const brandList = ref([]);
 const categoryList = ref([]);
@@ -108,6 +109,7 @@ const fetchProduct = async () => {
     productSKU.value = product.sku;
     productBarcode.value = product.barcode;
     productDescription.value = product.description;
+    productNote.value = product.note || '';
     productActive.value = product.is_active;
     productVolume.value = product.volume;
     // Ensure the background color is in hex format (add # if missing)
@@ -134,7 +136,8 @@ const updateData = async () => {
     formData.append('volume', productVolume.value);
     formData.append('background_color', productBackgroundColor.value);
     formData.append('description', productDescription.value);
-    formData.append('is_active', productActive.value);
+    formData.append('note', productNote.value);
+    formData.append('is_active', productActive.value ? '1' : '0');
     if (imageFile.value) {
       formData.append('image', imageFile.value);
     }
@@ -233,6 +236,10 @@ onMounted(() => {
                 <div class="mb-3">
                   <label for="productDescription" class="form-label">Description</label>
                   <textarea class="form-control" id="productDescription" v-model="productDescription"></textarea>
+                </div>
+                <div class="mb-3">
+                  <label for="productNote" class="form-label">Note</label>
+                  <textarea class="form-control" id="productNote" v-model="productNote"></textarea>
                 </div>
                 <div class="mb-3">
                   <label for="productActive" class="form-label">Active</label>

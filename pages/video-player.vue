@@ -152,6 +152,7 @@ const slotCheckInterval = ref(null)
 const balanceCheckInterval = ref(null)
 const activeWindowCheckInterval = ref(null)
 const slotTimeCheckInterval = ref(null) // New interval for checking slot time every second
+const isMqttHasConnected = ref(false);
 
 // Configuration functions
 const getMachineId = () => {
@@ -399,11 +400,14 @@ const subscribeToMqttTopics = () => {
     'scentral/video-player/recache',
     'scentral/video-player/perfume-trigger',
     `scentral/video-assignment/${machineId.value}`,
-    'scentral/video-assignment'
+    'scentral/video-assignment',
+    'scentral/ads/slot/assignment'
   ]
   
   topics.forEach(topic => {
     try {
+      // Unsubscribe first to prevent duplicates, then subscribe
+      mqttClient.value.unsubscribe(topic)
       mqttClient.value.subscribe(topic)
       log('info', `Subscribed to: ${topic}`)
     } catch (error) {
@@ -1854,16 +1858,36 @@ function handleMqttMessage(topic, message, data) {
   }
 }
 
+
 function setupMqttHandler() {
   try {
     // Register unified MQTT handler for all topics
     if ($mqtt && $mqtt.registerHandler) {
-      // $mqtt.registerHandler(machineId, handleMqttMessage);
-      $mqtt.registerHandler(machineId.value, handleMqttMessage)
-      log('info', `Registered unified MQTT handler for machine: ${machineId.value}`)
+      // Use a unique handler ID to prevent duplicates
+      const handlerId = `${machineId.value}`
       
-      // Subscribe to all required topics
-      subscribeToMqttTopics()
+      // First unregister any existing handler to prevent duplicates
+      if ($mqtt.unregisterHandler) {
+        try {
+          $mqtt.unregisterHandler(handlerId)
+          log('info', `Cleaned up existing MQTT handler: ${handlerId}`)
+        } catch (cleanupError) {
+          // Ignore cleanup errors, handler might not exist
+          log('info', `No existing handler to cleanup: ${cleanupError.message}`)
+        }
+      }
+      if (!isMqttHasConnected.value) {
+        // Register the unified handler
+        $mqtt.registerHandler(handlerId, handleMqttMessage)
+        log('info', `Registered unified MQTT handler for machine: ${machineId.value}`)
+        
+        // Subscribe to all required topics
+        subscribeToMqttTopics()
+        isMqttHasConnected.value = true // Reset flag after initial setup
+
+      }
+      
+      
     } else {
       log('error', 'MQTT client or registerHandler method not available')
     }
@@ -1874,10 +1898,33 @@ function setupMqttHandler() {
 
 function cleanupMqttHandler() {
   try {
+    // Unsubscribe from all topics first
+    if (mqttClient.value) {
+      const topics = [
+        `scentral/video-player/recache/${machineId.value}`,
+        `scentral/video-player/perfume-trigger/${machineId.value}`,
+        'scentral/video-player/recache',
+        'scentral/video-player/perfume-trigger',
+        `scentral/video-assignment/${machineId.value}`,
+        'scentral/video-assignment',
+        'scentral/ads/slot/assignment'
+      ]
+      
+      topics.forEach(topic => {
+        try {
+          mqttClient.value.unsubscribe(topic)
+          log('info', `Unsubscribed from: ${topic}`)
+        } catch (error) {
+          log('warn', `Failed to unsubscribe from ${topic}: ${error.message}`)
+        }
+      })
+    }
+    
     // Unregister unified MQTT handler when component unmounts
     if ($mqtt && $mqtt.unregisterHandler) {
-      $mqtt.unregisterHandler(`video-player-${machineId.value}`)
-      log('info', `Unregistered MQTT handler for machine: ${machineId.value}`)
+      const handlerId = `video-player-${machineId.value}`
+      $mqtt.unregisterHandler(handlerId)
+      log('info', `Unregistered MQTT handler: ${handlerId}`)
     }
   } catch (err) {
     log('error', `Failed to cleanup MQTT handler: ${err.message}`)
