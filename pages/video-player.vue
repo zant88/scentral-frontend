@@ -542,6 +542,9 @@ const loadStartAndEndSlotTime = async () => {
       const currentTime = formatTime(now.getHours(), now.getMinutes())
       const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
       
+      // Set isActiveWindow based on whether current time is in slot range
+      isActiveWindow.value = isInSlotRange
+      
       log('info', `Current time: ${currentTime}, Slot range: ${startTimeSlot.value} - ${endTimeSlot.value}, In range: ${isInSlotRange}`)
       
       // Start checking every second
