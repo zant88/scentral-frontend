@@ -46,6 +46,7 @@
                     <option value="">Select Ad Type</option>
                     <option value="perfume">Perfume (Machine Triggered)</option>
                     <option value="general">General Brand</option>
+                    <option value="default">Default Video</option>
                   </select>
                   <small class="form-text text-muted">
                     Perfume ads are triggered by machine interactions, General ads play in scheduled slots

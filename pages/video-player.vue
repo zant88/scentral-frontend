@@ -65,6 +65,14 @@
         </svg>
       </button>
 
+      <!-- Refresh Slot Times Button -->
+      <button id="refreshSlotBtn" v-show="!isFullscreen" @click="refreshSlotTimes" title="Refresh Slot Times">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+        </svg>
+      </button>
+
       <!-- Fullscreen Button -->
       <button id="fullscreenBtn" v-show="!isFullscreen" @click="toggleFullscreen" title="Enter Fullscreen">
         <svg v-if="!isFullscreen" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -94,6 +102,7 @@
 
 import { ref, reactive, onMounted, onBeforeUnmount, onBeforeMount } from 'vue'
 import VideoCachingProgress from '../components/VideoCachingProgress.vue'
+import Swal from 'sweetalert2'
 
 // Layout definition
 definePageMeta({
@@ -144,6 +153,12 @@ const cachingComponentRef = ref(null)
 const isFullscreen = ref(false)
 const slotAssignments = ref([])
 const lastSlotCheckTime = ref(null)
+
+// State to remember last playing video before perfume ads interruption
+const lastPlayingVideo = ref(null)
+const lastLoopIndex = ref(0)
+const lastSlot = ref(null)
+const lastAdType = ref(null)
 
 // New state for enhanced functionality
 const isBlackScreenActive = ref(false)
@@ -401,13 +416,16 @@ const subscribeToMqttTopics = () => {
     'scentral/video-player/perfume-trigger',
     `scentral/video-assignment/${machineId.value}`,
     'scentral/video-assignment',
-    'scentral/ads/slot/assignment'
+    'scentral/ads/slot/assignment',
+    'scentral/advertising/state'
   ]
   
   topics.forEach(topic => {
     try {
-      // Unsubscribe first to prevent duplicates, then subscribe
-      mqttClient.value.unsubscribe(topic)
+      // Check if unsubscribe method exists before calling it
+      if (typeof mqttClient.value.unsubscribe === 'function') {
+        mqttClient.value.unsubscribe(topic)
+      }
       mqttClient.value.subscribe(topic)
       log('info', `Subscribed to: ${topic}`)
     } catch (error) {
@@ -498,6 +516,158 @@ const handleVideoAssignmentTrigger = async (trigger) => {
   }
 }
 
+// Handle advertising state messages from MQTT
+const handleAdvertisingState = async (data) => {
+  try {
+    log('info', `Advertising state message received: ${JSON.stringify(data)}`)
+    
+    // Check if data has brand information
+    if (data && data.brand_id !== undefined) {
+      if (data.brand_id === -1) {
+        // Continue with last video (not reset from beginning)
+        log('info', 'Brand is -1, continuing with last video')
+        
+        // Stop current video immediately
+        const videoElement = document.getElementById('videoPlayer')
+        if (videoElement && !videoElement.paused) {
+          videoElement.pause()
+          videoElement.currentTime = 0
+        }
+        
+        isPerfumeAdPlaying.value = false
+        
+        // Continue with last video if available, otherwise play next in loop
+        if (lastPlayingVideo.value) {
+          log('info', `Resuming last video: ${lastPlayingVideo.value.title} in slot ${lastSlot.value?.name || 'None'} with ad_type ${lastAdType.value}`)
+          await playVideo(lastPlayingVideo.value, lastAdType.value, lastSlot.value)
+        } else {
+          log('info', 'No last video recorded, playing next in loop')
+          playNextInLoop()
+        }
+      } else {
+        // Play perfume videos for the specified brand ID
+        log('info', `Brand ID ${data.brand_id} received, playing perfume videos for this brand`)
+        
+        // Remember the current video before interruption
+        if (currentVideo.value) {
+          lastPlayingVideo.value = currentVideo.value
+          lastLoopIndex.value = currentLoopIndex.value
+          lastSlot.value = currentSlot.value
+          lastAdType.value = adType.value
+          log('info', `Remembered last video: ${currentVideo.value.title} at index ${currentLoopIndex.value} in slot ${currentSlot.value?.name || 'None'} with ad_type ${adType.value}`)
+        }
+        
+        // Stop current video immediately
+        const videoElement = document.getElementById('videoPlayer')
+        if (videoElement && !videoElement.paused) {
+          videoElement.pause()
+          videoElement.currentTime = 0
+        }
+        
+        // Find perfume ads for this brand
+        const brandPerfumeAds = manifest.value.perfume_ads.filter(ad => ad.brand_id === parseInt(data.brand_id))
+        
+        if (brandPerfumeAds.length > 0) {
+          // Play all perfume videos for this brand sequentially
+          await playPerfumeVideosSequentially(brandPerfumeAds)
+        } else {
+          log('warn', `No perfume ads found for brand ${data.brand_id}, continuing with regular playback`)
+          isPerfumeAdPlaying.value = false
+          playNextInLoop()
+        }
+      }
+    }
+    
+  } catch (error) {
+    log('error', `Failed to handle advertising state: ${error.message}`)
+    isPerfumeAdPlaying.value = false
+    // Continue with regular playback
+    playNextInLoop()
+  }
+}
+
+// New function to play perfume videos sequentially for a brand
+const playPerfumeVideosSequentially = async (perfumeAds) => {
+  try {
+    isPerfumeAdPlaying.value = true
+    log('info', `Starting sequential playback of ${perfumeAds.length} perfume videos`)
+    
+    for (let i = 0; i < perfumeAds.length; i++) {
+      const perfumeAd = perfumeAds[i]
+      
+      // Check perfume time cap before playing each video
+      if (perfumeTimeToday.value >= manifest.value.max_cap_seconds) {
+        log('warn', `Perfume ad time cap reached: ${perfumeTimeToday.value}s / ${manifest.value.max_cap_seconds}s`)
+        break
+      }
+      
+      log('info', `Playing perfume video ${i + 1}/${perfumeAds.length}: ${perfumeAd.title}`)
+      
+      // Stop any currently playing video before starting the perfume ad
+      const videoElement = document.getElementById('videoPlayer')
+      if (videoElement && !videoElement.paused) {
+        videoElement.pause()
+        videoElement.currentTime = 0
+      }
+      
+      // Play the perfume video
+      await playVideo(perfumeAd, 'perfume')
+      
+      // Wait for video to finish playing by monitoring the video element
+      await new Promise(resolve => {
+        const videoElement = document.getElementById('videoPlayer')
+        
+        const checkVideoEnded = () => {
+          if (videoElement.ended) {
+            log('info', `Perfume video ${perfumeAd.title} ended naturally`)
+            resolve()
+          } else if (videoElement.paused && videoElement.currentTime > 0) {
+            log('info', `Perfume video ${perfumeAd.title} was paused, assuming it ended`)
+            resolve()
+          } else {
+            // Check every 500ms
+            setTimeout(checkVideoEnded, 500)
+          }
+        }
+        
+        // Start checking after a short delay to ensure video starts playing
+        setTimeout(checkVideoEnded, 500)
+      })
+      
+      // Small gap between perfume videos
+      await new Promise(resolve => setTimeout(resolve, 1000))
+    }
+    
+    // After all perfume videos are played, resume the last video from beginning
+    log('info', 'All perfume videos completed, resuming last video from beginning')
+    isPerfumeAdPlaying.value = false
+    
+    // Resume the last video that was playing before the interruption
+    if (lastPlayingVideo.value) {
+      log('info', `Resuming last video from beginning: ${lastPlayingVideo.value.title} in slot ${lastSlot.value?.name || 'None'} with ad_type ${lastAdType.value}`)
+      // Reset the loop index to where we were before
+      currentLoopIndex.value = lastLoopIndex.value
+      await playVideo(lastPlayingVideo.value, lastAdType.value, lastSlot.value)
+      
+      // After the resumed video ends, continue with the next video in the loop
+      setTimeout(() => {
+        currentLoopIndex.value = (lastLoopIndex.value + 1) % playbackLoop.value.length
+        playNextInLoop()
+      }, 100)
+    } else {
+      // Fallback to regular playback if no last video is recorded
+      log('info', 'No last video recorded, continuing with regular playback')
+      playNextInLoop()
+    }
+    
+  } catch (error) {
+    log('error', `Failed to play perfume videos sequentially: ${error.message}`)
+    isPerfumeAdPlaying.value = false
+    
+    // Continue with regular playback
+    playNextInLoop()
+  }
+}
 
 // Helper functions to find videos and slots in manifest
 const findVideoInManifest = (videoId) => {
@@ -567,59 +737,156 @@ const startSlotTimeMonitoring = () => {
     clearInterval(slotTimeCheckInterval.value)
   }
   
+  let lastSlotRefreshTime = Date.now()
+  
   // Check every second
-  slotTimeCheckInterval.value = setInterval(() => {
+  slotTimeCheckInterval.value = setInterval(async () => {
+    // console.log('Checking slot time against current time...');
     const now = new Date()
     const currentTime = formatTime(now.getHours(), now.getMinutes())
+    console.log(`Current time: ${currentTime}`);
+    
+    // Refresh slot times from API every 5 minutes to get updates
+    if (Date.now() - lastSlotRefreshTime > 5 * 60 * 1000) {
+      try {
+        const response = await fetch(`${apiBaseUrl.value}/api/slot/active`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success) {
+            const oldStartTime = startTimeSlot.value
+            const oldEndTime = endTimeSlot.value
+            
+            startTimeSlot.value = data.start_time
+            endTimeSlot.value = data.end_time
+            
+            // Log if slot times have changed
+            if (oldStartTime !== data.start_time || oldEndTime !== data.end_time) {
+              log('info', `Slot times updated: ${oldStartTime}-${oldEndTime} → ${data.start_time}-${data.end_time}`)
+            }
+            
+            lastSlotRefreshTime = Date.now()
+          }
+        }
+      } catch (error) {
+        log('warn', `Failed to refresh slot times: ${error.message}`)
+      }
+    }
+    
     const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
+    console.log(`Slot range: ${startTimeSlot.value} - ${endTimeSlot.value}, In range: ${isInSlotRange}`);
     
     // If current time is outside slot range
     if (!isInSlotRange) {
       // Check if we were previously playing videos (not already showing black screen)
       if (!isBlackScreenActive.value) {
-        log('info', `Time ${currentTime} is outside slot range ${startTimeSlot.value} - ${endTimeSlot.value}, showing black screen`)
-        showBlackScreen(true)
+        log('info', `Time ${currentTime} is outside slot range ${startTimeSlot.value} - ${endTimeSlot.value}, stopping video and showing black screen`)
+        
+        // // Stop any currently playing video immediately
+        // const videoElement = document.getElementById('videoPlayer')
+        // if (videoElement && !videoElement.paused) {
+        //   videoElement.pause()
+        //   videoElement.currentTime = 0
+        //   log('info', 'Video stopped immediately due to end of slot time')
+        // }
+        // showBlackScreen(false)
+
+        window.location.reload();
       }
       
-      // If current time has exceeded endTimeSlot, refresh browser to prevent memory leak
-      const currentMinutes = parseTime(currentTime)
-      const endMinutes = parseTime(endTimeSlot.value)
-      
-      // Handle overnight slots
-      let hasExceededEndTime = false
-      if (endMinutes < parseTime(startTimeSlot.value)) {
-        // For overnight slots (e.g., 22:00 to 06:00), check if we've passed the end time of the next day
-        hasExceededEndTime = currentMinutes > endMinutes && currentMinutes > parseTime(startTimeSlot.value)
-      } else {
-        // For normal time slots
-        hasExceededEndTime = currentMinutes > endMinutes
-      }
-      
-      if (hasExceededEndTime) {
-        log('info', `Current time ${currentTime} has exceeded end time ${endTimeSlot.value}, refreshing browser to prevent memory leak`)
-        window.location.reload()
-      }
     } else {
       // If current time is within slot range and we were showing black screen
       if (isBlackScreenActive.value) {
         log('info', `Time ${currentTime} is within slot range ${startTimeSlot.value} - ${endTimeSlot.value}, resuming video playback`)
-        hideBlackScreen()
-        // Only restart playback if manifest is loaded
-        if (manifest.value) {
-          // Restart playback system if needed
-          if (playbackLoop.value.length === 0) {
-            initializePlaybackLoop()
-          }
-          if (playbackLoop.value.length > 0) {
-            playNextInLoop()
-          }
-        } else {
-          // If manifest is not loaded, we need to initialize the full playback system
-          initializeFullPlaybackSystem()
-        }
+        window.location.reload();
+        // // hideBlackScreen()
+        // // Only restart playback if manifest is loaded
+        // if (manifest.value) {
+        //   // Restart playback system if needed
+        //   if (playbackLoop.value.length === 0) {
+        //     initializePlaybackLoop()
+        //   }
+        //   if (playbackLoop.value.length > 0) {
+        //     playNextInLoop()
+        //   }
+        // } else {
+        //   // If manifest is not loaded, we need to initialize the full playback system
+        //   initializeFullPlaybackSystem()
+        // }
       }
     }
   }, 1000) // Check every second
+}
+
+// Refresh slot times from API
+const refreshSlotTimes = async () => {
+  try {
+    const response = await fetch(`${apiBaseUrl.value}/api/slot/active`)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+    
+    const data = await response.json()
+    if (data.success) {
+      const oldStartTime = startTimeSlot.value
+      const oldEndTime = endTimeSlot.value
+      
+      startTimeSlot.value = data.start_time
+      endTimeSlot.value = data.end_time
+      
+      // Log if slot times have changed
+      if (oldStartTime !== data.start_time || oldEndTime !== data.end_time) {
+        log('info', `Slot times refreshed: ${oldStartTime}-${oldEndTime} → ${data.start_time}-${data.end_time}`)
+        
+        // Check if current time is still within the new slot range
+        const now = new Date()
+        const currentTime = formatTime(now.getHours(), now.getMinutes())
+        const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
+        
+        // Update active window status
+        isActiveWindow.value = isInSlotRange
+        
+        // If we were playing videos but now outside the slot range, stop and show black screen
+        if (!isInSlotRange && !isBlackScreenActive.value) {
+          log('info', `After refresh, time ${currentTime} is outside new slot range ${startTimeSlot.value} - ${endTimeSlot.value}, stopping video and showing black screen`)
+          
+          // Stop any currently playing video immediately
+          const videoElement = document.getElementById('videoPlayer')
+          if (videoElement && !videoElement.paused) {
+            videoElement.pause()
+            videoElement.currentTime = 0
+            log('info', 'Video stopped immediately due to end of slot time after refresh')
+          }
+          
+          showBlackScreen(true)
+        }
+        // If we were showing black screen but now within the slot range, resume playback
+        else if (isInSlotRange && isBlackScreenActive.value) {
+          log('info', `After refresh, time ${currentTime} is within new slot range ${startTimeSlot.value} - ${endTimeSlot.value}, resuming video playback`)
+          // loadNewVideos();
+          
+          hideBlackScreen()
+          
+          // Only restart playback if manifest is loaded
+          if (manifest.value) {
+            // Restart playback system if needed
+            if (playbackLoop.value.length === 0) {
+              initializePlaybackLoop()
+            }
+            if (playbackLoop.value.length > 0) {
+              playNextInLoop()
+            }
+          }
+        }
+      }
+      
+      return true
+    } else {
+      throw new Error(data.message || 'Failed to refresh slot times')
+    }
+  } catch (error) {
+    log('error', `Failed to refresh slot times: ${error.message}`)
+    return false
+  }
 }
 
 // Initialize full playback system when entering slot range from black screen
@@ -668,12 +935,27 @@ const loadManifest = async () => {
     
     manifest.value = data.data
     
+    // Ensure manifest has required properties
+    if (!manifest.value.general_ads) manifest.value.general_ads = []
+    if (!manifest.value.perfume_ads) manifest.value.perfume_ads = []
+    if (!manifest.value.time_slots) manifest.value.time_slots = []
+    
     // Clean video URLs in the manifest
     if (manifest.value.default_video) {
       const originalUrl = manifest.value.default_video.file_path
       manifest.value.default_video.file_path = cleanVideoUrl(originalUrl)
       if (originalUrl !== manifest.value.default_video.file_path) {
         log('info', `Cleaned default video URL`)
+      }
+    } else {
+      log('warn', 'No default video found in manifest')
+      // Create a fallback default video if none exists
+      manifest.value.default_video = {
+        id: 'default-fallback',
+        title: 'Default Video',
+        file_path: '/img/video-placeholder.png', // Use a placeholder
+        ad_type: 'default',
+        cost_per_play: 0
       }
     }
     
@@ -709,7 +991,28 @@ const loadManifest = async () => {
     
   } catch (error) {
     log('error', `Failed to load manifest: ${error.message}`)
-    throw error
+    
+    // Create a fallback manifest with default video
+    manifest.value = {
+      default_video: {
+        id: 'default-fallback',
+        title: 'Default Video',
+        file_path: '/img/video-placeholder.png',
+        ad_type: 'default',
+        cost_per_play: 0
+      },
+      general_ads: [],
+      perfume_ads: [],
+      time_slots: [],
+      max_cap_seconds: 300
+    }
+    
+    log('info', 'Using fallback manifest with default video only')
+    
+    // Still try to initialize with the fallback
+    prepareVideosForCaching()
+    await cacheVideosWithProgress()
+    initializeGeneralAdQueue()
   }
 }
 
@@ -998,9 +1301,20 @@ const initializePlaybackLoop = () => {
   }
   
   if (availableAds.length === 0) {
-    log('warn', `No available general ads for slot ${currentSlotData.name}, showing black screen (idle mode)`)
-    showBlackScreen(true)
-    return
+    if (!manifest.value.default_video) {
+      log('warn', 'No default video available, showing black screen (idle mode)')
+      showBlackScreen(true)
+      return
+    }
+    
+    // If no ads but within active slot time, play only default video
+    log('info', `No available general ads for slot ${currentSlotData.name}, playing default video only`)
+    playbackLoop.value.push({
+      type: 'default',
+      video: manifest.value.default_video,
+      originalIndex: 0
+    })
+    log('info', `Created playback loop with default video only for slot ${currentSlotData.name}`)
   } else if (!manifest.value.default_video) {
     log('warn', 'No default video available, showing black screen (idle mode)')
     showBlackScreen(true)
@@ -1034,9 +1348,14 @@ const initializePlaybackLoop = () => {
 }
 
 const startPlaybackLoop = () => {
+  // Check current time before starting
+  const now = new Date()
+  const currentTime = formatTime(now.getHours(), now.getMinutes())
+  const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
+  
   // Check if we're in active window before starting
-  if (!checkActiveWindow()) {
-    log('info', 'Outside active window, showing black screen')
+  if (!isInSlotRange) {
+    log('info', `Time ${currentTime} is outside slot range ${startTimeSlot.value} - ${endTimeSlot.value}, showing black screen`)
     showBlackScreen(true)
     return
   }
@@ -1068,9 +1387,14 @@ const startPlaybackLoop = () => {
 
 const playNextInLoop = async () => {
   try {
+    // Check current time before playing
+    const now = new Date()
+    const currentTime = formatTime(now.getHours(), now.getMinutes())
+    const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
+    
     // Check if we're still in active window
-    if (!isActiveWindow.value) {
-      log('info', 'Outside active window, stopping playback')
+    if (!isInSlotRange) {
+      log('info', `Time ${currentTime} is outside slot range ${startTimeSlot.value} - ${endTimeSlot.value}, stopping playback`)
       showBlackScreen(true)
       return
     }
@@ -1267,19 +1591,22 @@ const formatTime = (hours, minutes) => {
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
 }
 
-// Check if current time is within active window (08:00-23:00)
+// Check if current time is within active slot time
 const checkActiveWindow = () => {
   const now = new Date()
-  const currentHour = now.getHours()
   const wasActive = isActiveWindow.value
   
-  // Active window is from 08:00 to 23:00 (8 AM to 11 PM)
-  isActiveWindow.value = currentHour >= 8 && currentHour < 23
+  // Check if current time is within the slot range
+  const currentTime = formatTime(now.getHours(), now.getMinutes())
+  const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
+  
+  // Set isActiveWindow based on whether current time is in slot range
+  isActiveWindow.value = isInSlotRange
   
   // Log state changes
   if (wasActive !== isActiveWindow.value) {
     if (isActiveWindow.value) {
-      log('info', 'Entering active window - starting playback')
+      log('info', `Entering active slot window (${startTimeSlot.value}-${endTimeSlot.value}) - starting playback`)
       // If we were showing black screen, stop it and resume playback
       if (isBlackScreenActive.value) {
         isBlackScreenActive.value = false
@@ -1290,7 +1617,7 @@ const checkActiveWindow = () => {
         }, 1000)
       }
     } else {
-      log('info', 'Exiting active window - showing black screen')
+      log('info', `Exiting active slot window (${startTimeSlot.value}-${endTimeSlot.value}) - showing black screen`)
       // Show black screen when exiting active window
       showBlackScreen(true) // true indicates power saving mode
     }
@@ -1435,7 +1762,28 @@ const playDefaultVideo = async () => {
     }
     
     log('info', `Playing default video: ${manifest.value.default_video.title}`)
-    await playVideo(manifest.value.default_video, 'default')
+    
+    // Try to play the default video
+    try {
+      await playVideo(manifest.value.default_video, 'default')
+    } catch (playError) {
+      log('error', `Failed to play default video normally: ${playError.message}`)
+      
+      // Try with a direct video element approach as fallback
+      const videoElement = document.getElementById('videoPlayer')
+      if (videoElement) {
+        // Remove any existing error handlers
+        videoElement.onerror = null
+        
+        // Try to load a simple placeholder or black screen
+        videoElement.src = ''
+        videoElement.style.backgroundColor = '#000'
+        videoElement.load()
+        
+        log('info', 'Showing black screen as fallback')
+        showBlackScreen()
+      }
+    }
     
   } catch (error) {
     log('error', `Failed to play default video: ${error.message}`)
@@ -1445,9 +1793,11 @@ const playDefaultVideo = async () => {
 
 const playVideo = async (video, adTypeParam, slot = null) => {
   try {
+    console.log('playing video', video, adTypeParam, slot)
     currentVideo.value = video
-    currentSlot.value = slot ? slot.name : 'None'
+    currentSlot.value = slot ? (slot.name || slot) : 'None'
     adType.value = adTypeParam
+    console.log('current slot set to', currentSlot.value)
     
     // Get cached video
     const cachedVideo = await getCachedVideo(video.id)
@@ -1462,17 +1812,51 @@ const playVideo = async (video, adTypeParam, slot = null) => {
     }
     
     const videoElement = document.getElementById('videoPlayer')
+    
+    // Add error handling for the video element
+    videoElement.onerror = (e) => {
+      log('error', `Video element error: ${e.message || 'Unknown error'}`)
+      // If this is not the default video, try to play the default video instead
+      if (video.ad_type !== 'default' && manifest.value.default_video) {
+        log('info', 'Falling back to default video due to video element error')
+        playDefaultVideo()
+      }
+    }
+    
     videoElement.src = videoUrl
     videoElement.load()
     
-    await videoElement.play()
+    // Add a timeout for video play
+    const playPromise = videoElement.play()
+    if (playPromise !== undefined) {
+      playPromise.catch((playError) => {
+        log('error', `Video play promise rejected: ${playError.message}`)
+        // If this is not the default video, try to play the default video instead
+        if (video.ad_type !== 'default' && manifest.value.default_video) {
+          log('info', 'Falling back to default video due to play error')
+          playDefaultVideo()
+        }
+      })
+    }
+    
+    // Extract slot ID properly - handle both slot object and slot ID
+    let slotId = null
+    if (slot) {
+      if (typeof slot === 'object' && slot.id) {
+        slotId = parseInt(slot.id)
+      } else if (typeof slot === 'number') {
+        slotId = slot
+      } else if (typeof slot === 'string') {
+        slotId = parseInt(slot)
+      }
+    }
     
     // Log playback start
     logPlaybackEvent({
       videoId: video.id,
       brandId: video.brand_id,
       adType: adTypeParam,
-      slotId: slot ? slot.id : null,
+      slotId: slotId,
       status: 'started',
       duration: 0,
       cost: video.cost_per_play || 0
@@ -1480,7 +1864,13 @@ const playVideo = async (video, adTypeParam, slot = null) => {
     
   } catch (error) {
     log('error', `Failed to play video ${video.title}: ${error.message}`)
-    throw error
+    // If this is not the default video, try to play the default video instead
+    if (video.ad_type !== 'default' && manifest.value.default_video) {
+      log('info', 'Falling back to default video due to play error')
+      await playDefaultVideo()
+    } else {
+      throw error
+    }
   }
 }
 
@@ -1494,6 +1884,7 @@ const handleVideoEnded = async () => {
   const actualDuration = Math.round(videoElement.currentTime)
   
   // Log playback completion
+  console.log('this is current slot in ended', currentSlot.value)
   await logPlaybackEvent({
     videoId: currentVideo.value.id,
     brandId: currentVideo.value.brand_id,
@@ -1855,6 +2246,8 @@ function handleMqttMessage(topic, message, data) {
         log('info', `Slot assignment event received for machine: ${machineId.value}`)
         loadNewVideos()
       }
+    } else if (topic === "scentral/advertising/state") {
+      handleAdvertisingState(data)
     }
   } catch (error) {
     log('error', `Failed to parse MQTT message: ${error.message}`)
@@ -1910,12 +2303,16 @@ function cleanupMqttHandler() {
         'scentral/video-player/perfume-trigger',
         `scentral/video-assignment/${machineId.value}`,
         'scentral/video-assignment',
-        'scentral/ads/slot/assignment'
+        'scentral/ads/slot/assignment',
+        'scentral/advertising/state'
       ]
       
       topics.forEach(topic => {
         try {
-          mqttClient.value.unsubscribe(topic)
+          // Check if unsubscribe method exists before calling it
+          if (typeof mqttClient.value.unsubscribe === 'function') {
+            mqttClient.value.unsubscribe(topic)
+          }
           log('info', `Unsubscribed from: ${topic}`)
         } catch (error) {
           log('warn', `Failed to unsubscribe from ${topic}: ${error.message}`)
@@ -2237,6 +2634,34 @@ onBeforeUnmount(() => {
 }
 
 #fullscreenBtn svg {
+  width: 24px;
+  height: 24px;
+}
+
+#refreshSlotBtn {
+  position: fixed;
+  bottom: 20px;
+  left: 140px;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  border: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 9999;
+  transition: all 0.3s ease;
+}
+
+#refreshSlotBtn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.1);
+}
+
+#refreshSlotBtn svg {
   width: 24px;
   height: 24px;
 }

@@ -115,9 +115,9 @@
                       <a href="#" class="dropdown-item" @click="viewVideoLogs(item)">
                         <i class="fas fa-list mr-2"></i>View Logs
                       </a>
-                      <a href="#" class="dropdown-item" @click="navigateTo(`/admin/videos/update/${item.id}`)">
+                      <NuxtLink :to="`/admin/videos/update/${item.id}`" class="dropdown-item">
                         <i class="fas fa-edit mr-2"></i>Edit
-                      </a>
+                      </NuxtLink>
                       <div class="dropdown-divider"></div>
                       <a href="#"
                          v-if="item.status === 'active'"
