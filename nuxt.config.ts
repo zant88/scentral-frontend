@@ -47,7 +47,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       apiBase: 'https://office.scentralhub.com',
-      // apiBase: 'http://192.168.18.132:3030',
+      // apiBase: 'http://localhost:3030',
       mqttBase: 'wss://mqtt.kodemake.com',
     }
   },
