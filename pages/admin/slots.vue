@@ -10,50 +10,42 @@
     <div class="section-body">
       <h2 class="section-title">Advertisement Slot Configuration</h2>
       <p class="section-lead">Manage 24-hour advertising slots with perfume and general ad allocation</p>
-
+      
       <!-- Slot Configuration Summary -->
       <div class="row">
         <div class="col-lg-3 col-md-6 col-sm-6 col-12">
           <div class="card card-statistic-1">
             <div class="card-icon bg-primary"><i class="fas fa-clock"></i></div>
             <div class="card-wrap">
-              <div class="card-header">
-                <h4>Total Hours</h4>
-              </div>
-              <div class="card-body">{{ slotStats.total_slots }}/24</div>
+              <div class="card-header"><h4>Active Slots</h4></div>
+              <div class="card-body">{{ slotStats.active_slots }}/{{ slotStats.total_slots }}</div>
             </div>
           </div>
         </div>
         <div class="col-lg-3 col-md-6 col-sm-6 col-12">
           <div class="card card-statistic-1">
-            <div class="card-icon bg-success"><i class="fas fa-video"></i></div>
+            <div class="card-icon bg-success"><i class="fas fa-leaf"></i></div>
             <div class="card-wrap">
-              <div class="card-header">
-                <h4>Active Today</h4>
-              </div>
-              <div class="card-body">{{ slotStats.active_today }}</div>
+              <div class="card-header"><h4>Perfume Slots</h4></div>
+              <div class="card-body">{{ slotStats.perfume_slots }}</div>
             </div>
           </div>
         </div>
         <div class="col-lg-3 col-md-6 col-sm-6 col-12">
           <div class="card card-statistic-1">
-            <div class="card-icon bg-warning"><i class="fas fa-eye"></i></div>
+            <div class="card-icon bg-warning"><i class="fas fa-tv"></i></div>
             <div class="card-wrap">
-              <div class="card-header">
-                <h4>Total Plays</h4>
-              </div>
-              <div class="card-body">{{ formatNumber(slotStats.total_plays) }}</div>
+              <div class="card-header"><h4>General Slots</h4></div>
+              <div class="card-body">{{ slotStats.general_slots }}</div>
             </div>
           </div>
         </div>
         <div class="col-lg-3 col-md-6 col-sm-6 col-12">
           <div class="card card-statistic-1">
-            <div class="card-icon bg-info"><i class="fas fa-chart-line"></i></div>
+            <div class="card-icon bg-info"><i class="fas fa-percentage"></i></div>
             <div class="card-wrap">
-              <div class="card-header">
-                <h4>Revenue Today</h4>
-              </div>
-              <div class="card-body">{{ formatCurrency(slotStats.revenue_today) }}</div>
+              <div class="card-header"><h4>Utilization</h4></div>
+              <div class="card-body">{{ slotStats.utilization }}%</div>
             </div>
           </div>
         </div>
@@ -87,92 +79,77 @@
       </div> -->
 
       <!-- Enhanced Timeline View -->
-      <div class="row">
+      <div class="row" style="display: none;">
         <div class="col-12">
           <div class="card">
             <div class="card-header">
-              <h4>24-Hour Slot Timeline Management</h4>
+              <h4>24-Hour Slot Timeline</h4>
               <div class="card-header-action">
-                <div class="d-flex align-items-center">
-                  <select v-model="selectedDate" @change="fetchSlotsForDate" class="form-control form-control-sm mr-2"
-                    style="width: 150px;">
-                    <option value="">Select Date</option>
-                    <option value="today">Today</option>
-                    <option value="tomorrow">Tomorrow</option>
-                  </select>
-                  <button class="btn btn-primary btn-sm mr-2" @click="showQuickAssignModal = true">
-                    <i class="fas fa-magic mr-1"></i> Quick Assign
-                  </button>
-                  <button class="btn btn-success btn-sm" @click="showSlotForm = true">
-                    <i class="fas fa-plus mr-1"></i> Create Slot
-                  </button>
+                <div class="dropdown">
+                  <a href="#" data-toggle="dropdown" class="btn btn-outline-primary dropdown-toggle">
+                    <i class="fas fa-filter mr-2"></i>Filter
+                  </a>
+                  <div class="dropdown-menu">
+                    <a href="#" class="dropdown-item" @click="filterSlots('all')">All Slots</a>
+                    <a href="#" class="dropdown-item" @click="filterSlots('active')">Active Only</a>
+                    <a href="#" class="dropdown-item" @click="filterSlots('perfume')">Perfume Slots</a>
+                    <a href="#" class="dropdown-item" @click="filterSlots('general')">General Slots</a>
+                  </div>
                 </div>
               </div>
             </div>
             <div class="card-body">
-              <div v-if="loading" class="text-center py-4">
-                <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
-                <p class="text-muted mt-2">Loading slot data...</p>
-              </div>
-              <div v-else class="admin-hourly-timeline">
-                <div v-for="hour in 24" :key="hour" :class="['admin-hour-slot', getAdminHourSlotClass(hour - 1)]">
-                  <div class="hour-header">
-                    <div class="hour-time">
-                      {{ String(hour - 1).padStart(2, '0') }}:00
-                    </div>
-                    <div class="hour-status">
-                      <div v-if="getCurrentHour() === hour - 1" class="current-indicator">
-                        <span class="badge badge-primary">NOW</span>
-                      </div>
-                    </div>
+              <div class="timeline-container">
+                <div class="hours-header">
+                  <div class="hour-label" v-for="hour in 24" :key="hour">
+                    {{ String(hour - 1).padStart(2, '0') }}
                   </div>
-                  <div class="hour-content">
-                    <div v-if="getSlotsForHour(hour - 1).length > 0" class="slots-container">
-                      <div v-for="slot in getSlotsForHour(hour - 1)" :key="slot.id" class="admin-slot-card"
-                        :class="getSlotCardClass(slot)" @click="selectSlot(slot)">
-                        <div class="slot-header">
-                          <div class="slot-name">{{ slot.name }}</div>
-                          <div class="slot-type-badge">
-                            <i :class="slot.allow_perfume ? 'fas fa-leaf text-success' : 'fas fa-tv text-info'"></i>
-                          </div>
-                        </div>
-                        <div class="slot-content">
-                          <div v-if="slot.video_assignment" class="video-assignment">
-                            <div class="video-title">{{ slot.video_assignment.video_title }}</div>
-                            <div class="video-brand">{{ slot.video_assignment.brand_name }}</div>
-                            <div class="slot-metrics">
-                              <span class="metric">
-                                <i class="fas fa-play text-muted"></i> {{ slot.video_assignment.plays_count || 0 }}
-                              </span>
-                              <span class="metric">
-                                <i class="fas fa-wallet text-muted"></i> {{
-                formatCurrency(slot.video_assignment.total_cost || 0) }}
-                              </span>
-                            </div>
-                          </div>
-                          <div v-else class="empty-assignment">
-                            <span class="text-muted">No video assigned</span>
-                            <button class="btn btn-xs btn-outline-primary ml-2" @click.stop="assignVideoToSlot(slot)">
-                              <i class="fas fa-plus"></i>
-                            </button>
-                          </div>
-                        </div>
-                        <div class="slot-actions">
-                          <button class="btn btn-xs btn-outline-primary" @click.stop="editSlot(slot)">
-                            <i class="fas fa-edit"></i>
-                          </button>
-                          <button class="btn btn-xs btn-outline-info" @click.stop="viewAssignments(slot)">
-                            <i class="fas fa-eye"></i>
-                          </button>
-                        </div>
+                </div>
+                <div class="slots-grid">
+                  <div 
+                    v-for="slot in filteredSlots" 
+                    :key="slot.id"
+                    class="slot-card"
+                    :class="getSlotClasses(slot)"
+                    @click="selectSlot(slot)"
+                  >
+                    <div class="slot-header">
+                      <h6>{{ slot.name }}</h6>
+                      <div class="slot-time">
+                        {{ formatTimeOnly(slot.start_time) }} - {{ formatTimeOnly(slot.end_time) }}
                       </div>
                     </div>
-                    <div v-else class="no-slots">
-                      <div class="empty-slot-content">
-                        <span class="text-muted">No slot configured</span>
-                        <button class="btn btn-xs btn-success ml-2" @click="createSlotForHour(hour - 1)">
-                          <i class="fas fa-plus"></i> Create
-                        </button>
+                    <div class="slot-content">
+                      <div class="slot-stats">
+                        <div class="stat-item">
+                          <div class="stat-icon">
+                            <i class="fas fa-video"></i>
+                          </div>
+                          <div class="stat-info">
+                            <div class="stat-value">{{ slot.assignmentCount || 0 }}</div>
+                            <div class="stat-label">Videos</div>
+                          </div>
+                        </div>
+                        <div class="stat-item">
+                          <div class="stat-icon">
+                            <i class="fas fa-chart-pie"></i>
+                          </div>
+                          <div class="stat-info">
+                            <div class="stat-value">{{ slot.utilization }}%</div>
+                            <div class="stat-label">Utilized</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="slot-types">
+                        <span v-if="slot.allow_perfume" class="slot-type-badge perfume">
+                          <i class="fas fa-leaf"></i> {{ slot.perfume_seconds }}s
+                        </span>
+                        <span v-if="slot.allow_general" class="slot-type-badge general">
+                          <i class="fas fa-tv"></i> {{ slot.general_seconds }}s
+                        </span>
+                      </div>
+                      <div class="slot-progress">
+                        <div class="progress-bar" :class="getUtilizationClass(slot.utilization)" :style="{width: slot.utilization + '%'}"></div>
                       </div>
                     </div>
                   </div>
@@ -183,337 +160,232 @@
         </div>
       </div>
 
-      <!-- Quick Assign Modal -->
-      <div v-if="showQuickAssignModal" class="modal fade show"
-        style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="showQuickAssignModal = false">
-        <div class="modal-dialog modal-lg modal-dialog-centered">
-          <div class="modal-content">
-            <div class="modal-header">
-              <h5 class="modal-title">Quick Video Assignment</h5>
-              <button type="button" class="btn-close" @click="showQuickAssignModal = false"></button>
-            </div>
-            <div class="modal-body">
-              <div class="row">
-                <div class="col-md-6">
-                  <label class="form-label">Select Time Range</label>
-                  <select v-model="quickAssign.startHour" class="form-control mb-3">
-                    <option value="">Start Hour</option>
-                    <option v-for="hour in 24" :key="hour" :value="hour - 1">
-                      {{ String(hour - 1).padStart(2, '0') }}:00
-                    </option>
-                  </select>
-                  <select v-model="quickAssign.endHour" class="form-control mb-3">
-                    <option value="">End Hour</option>
-                    <option v-for="hour in 24" :key="hour" :value="hour">
-                      {{ String(hour).padStart(2, '0') }}:00
-                    </option>
-                  </select>
-                </div>
-                <div class="col-md-6">
-                  <label class="form-label">Select Video</label>
-                  <select v-model="quickAssign.videoId" class="form-control mb-3">
-                    <option value="">Choose Video</option>
-                    <option v-for="video in approvedVideos" :key="video.id" :value="video.id">
-                      {{ video.title }} ({{ video.brand?.name }})
-                    </option>
-                  </select>
-                  <label class="form-label">Priority</label>
-                  <select v-model="quickAssign.priority" class="form-control">
-                    <option value="normal">Normal</option>
-                    <option value="high">High</option>
-                    <option value="low">Low</option>
-                  </select>
+      <!-- List View -->
+      <div v-if="viewMode === 'list'" class="row">
+        <div class="col-12">
+          <div class="card">
+            <div class="card-header actionable">
+              <div class="left-action">
+                <input class="check-all" type="checkbox" @change="toggleAll" />
+                <a href="#" class="btn btn-icon btn-danger note-btn" @click="deleteSelectedSlots" v-if="anyChecked" data-toggle="tooltip"
+                  title="Delete Selected"><i class="fa fa-trash"></i></a>
+                <a href="#" class="btn btn-icon btn-info note-btn" @click="bulkEditSlots" v-if="anyChecked" data-toggle="tooltip"
+                  title="Bulk Edit"><i class="fas fa-edit"></i></a>
+                <button class="btn btn-primary" @click="showAddSlot">
+                  <i class="fas fa-plus mr-2"></i>Add New Slot
+                </button>
+                <button class="btn btn-secondary" @click="openMachineSelectionModal">
+                  <i class="fas fa-play mr-2"></i> Play Video Ads
+                </button>
+              </div>
+              <div class="right-action">
+                <div class="input-group">
+                  <input type="text" class="form-control" placeholder="Search slots..." v-model="searchQuery">
+                  <div class="input-group-append">
+                    <button class="btn btn-primary"><i class="fas fa-search"></i></button>
+                  </div>
                 </div>
               </div>
             </div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-secondary" @click="showQuickAssignModal = false">Cancel</button>
-              <button type="button" class="btn btn-primary" @click="executeQuickAssign">Assign Video</button>
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <table class="table table-striped">
+                  <thead>
+                    <tr>
+                      <th scope="col">&nbsp;</th>
+                      <th scope="col">Slot Name</th>
+                      <th scope="col">Time Range</th>
+                      <th scope="col">Duration Allocation</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Priority</th>
+                      <th scope="col">Assigned Videos</th>
+                      <th scope="col">Utilization</th>
+                      <th scope="col">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(slot, index) in filteredSlots" :key="slot.id">
+                      <td class="checkbox"><input type="checkbox" v-model="checkedItems" :value="slot.id" /></td>
+                      <td>
+                        <div class="font-weight-600">{{ slot.name }}</div>
+                        <div class="text-muted small">
+                          <span v-if="slot.allow_perfume" class="badge badge-primary badge-sm mr-1">Perfume</span>
+                          <span v-if="slot.allow_general" class="badge badge-success badge-sm">General</span>
+                        </div>
+                      </td>
+                      <td>
+                        <div>{{ formatTimeOnly(slot.start_time) }} - {{ formatTimeOnly(slot.end_time) }}</div>
+                        <div class="text-muted small">{{ calculateSlotDuration(slot.start_time, slot.end_time) }} total</div>
+                      </td>
+                      <td>
+                        <div class="progress-group">
+                          <div class="progress-group-header">
+                            <div>Perfume: {{ slot.perfume_seconds }}s</div>
+                            <div>{{ Math.round((slot.perfume_seconds / 3600) * 100) }}%</div>
+                          </div>
+                          <div class="progress progress-sm">
+                            <div class="progress-bar bg-primary" :style="{width: (slot.perfume_seconds / 3600) * 100 + '%'}"></div>
+                          </div>
+                        </div>
+                        <div class="progress-group mt-2">
+                          <div class="progress-group-header">
+                            <div>General: {{ slot.general_seconds }}s</div>
+                            <div>{{ Math.round((slot.general_seconds / 3600) * 100) }}%</div>
+                          </div>
+                          <div class="progress progress-sm">
+                            <div class="progress-bar bg-success" :style="{width: (slot.general_seconds / 3600) * 100 + '%'}"></div>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <span class="badge" :class="slot.status === 'ACTIVE' ? 'badge-success' : 'badge-secondary'">
+                          {{ slot.status }}
+                        </span>
+                      </td>
+                      <td>
+                        <span class="badge" :class="getPriorityClass(slot.priority)">
+                          {{ slot.priority }}
+                        </span>
+                      </td>
+                      <td>
+                        <div class="text-center">
+                          <div class="font-weight-600">{{ slot.assignmentCount || 0 }}</div>
+                          <div class="text-muted small">videos</div>
+                        </div>
+                      </td>
+                      <td>
+                        <div class="progress" style="height: 6px;">
+                          <div class="progress-bar" :class="getUtilizationClass(slot.utilization)" :style="{width: slot.utilization + '%'}"></div>
+                        </div>
+                        <small>{{ slot.utilization }}%</small>
+                      </td>
+                      <td>
+                        <div class="dropdown">
+                          <a href="#" data-toggle="dropdown" class="btn btn-sm btn-outline-primary dropdown-toggle">Actions</a>
+                          <div class="dropdown-menu">
+                            <a href="#" class="dropdown-item" @click="editSlot(slot)">Edit</a>
+                            <a href="#" class="dropdown-item" @click="viewAssignments(slot)">View Assignments</a>
+                            <a href="#" class="dropdown-item" @click="assignVideoToSlot(slot)">Assign Video</a>
+                            <a href="#" class="dropdown-item" @click="duplicateSlot(slot)">Duplicate</a>
+                            <div class="dropdown-divider"></div>
+                            <a href="#" class="dropdown-item text-danger" @click="deleteSlot(slot.id)">Delete</a>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
       </div>
-      <div class="card-body">
-        <div class="timeline-container">
-          <div class="hours-header">
-            <div class="hour-label" v-for="hour in 24" :key="hour">
-              {{ String(hour - 1).padStart(2, '0') }}
-            </div>
-          </div>
-          <div class="slots-grid">
-            <div v-for="slot in filteredSlots" :key="slot.id" class="slot-card" :class="getSlotClasses(slot)"
-              @click="selectSlot(slot)">
-              <div class="slot-header">
-                <h6>{{ slot.name }}</h6>
-                <div class="slot-time">
-                  {{ formatTimeOnly(slot.start_time) }} - {{ formatTimeOnly(slot.end_time) }}
-                </div>
-              </div>
-              <div class="slot-content">
-                <div class="slot-stats">
-                  <div class="stat-item">
-                    <div class="stat-icon">
-                      <i class="fas fa-video"></i>
-                    </div>
-                    <div class="stat-info">
-                      <div class="stat-value">{{ slot.assignmentCount || 0 }}</div>
-                      <div class="stat-label">Videos</div>
-                    </div>
-                  </div>
-                  <div class="stat-item">
-                    <div class="stat-icon">
-                      <i class="fas fa-chart-pie"></i>
-                    </div>
-                    <div class="stat-info">
-                      <div class="stat-value">{{ slot.utilization }}%</div>
-                      <div class="stat-label">Utilized</div>
-                    </div>
-                  </div>
-                </div>
-                <div class="slot-types">
-                  <span v-if="slot.allow_perfume" class="slot-type-badge perfume">
-                    <i class="fas fa-leaf"></i> {{ slot.perfume_seconds }}s
-                  </span>
-                  <span v-if="slot.allow_general" class="slot-type-badge general">
-                    <i class="fas fa-tv"></i> {{ slot.general_seconds }}s
-                  </span>
-                </div>
-                <div class="slot-progress">
-                  <div class="progress-bar" :class="getUtilizationClass(slot.utilization)"
-                    :style="{ width: slot.utilization + '%' }"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
 
-
-    <!-- List View -->
-    <div v-if="viewMode === 'list'" class="row">
-      <div class="col-12">
-        <div class="card">
-          <div class="card-header actionable">
-            <div class="left-action">
-              <input class="check-all" type="checkbox" @change="toggleAll" />
-              <a href="#" class="btn btn-icon btn-danger note-btn" @click="deleteSelectedSlots" v-if="anyChecked"
-                data-toggle="tooltip" title="Delete Selected"><i class="fa fa-trash"></i></a>
-              <a href="#" class="btn btn-icon btn-info note-btn" @click="bulkEditSlots" v-if="anyChecked"
-                data-toggle="tooltip" title="Bulk Edit"><i class="fas fa-edit"></i></a>
-              <button class="btn btn-primary" @click="showAddSlot">
-                <i class="fas fa-plus mr-2"></i>Add New Slot
-              </button>
-              <button class="btn btn-secondary" @click="openMachineSelectionModal">
-                <i class="fas fa-play mr-2"></i> Play Video Ads
-              </button>
-            </div>
-            <div class="right-action">
-              <div class="input-group">
-                <input type="text" class="form-control" placeholder="Search slots..." v-model="searchQuery">
-                <div class="input-group-append">
-                  <button class="btn btn-primary"><i class="fas fa-search"></i></button>
-                </div>
+      <!-- Video Assignment View -->
+      <div class="row" style="display: none;">
+        <div class="col-lg-8">
+          <div class="card">
+            <div class="card-header">
+              <h4>Manual Video Assignment</h4>
+              <div class="card-header-action">
+                <button class="btn btn-sm btn-primary" @click="showManualAssignmentForm = true">
+                  <i class="fas fa-plus mr-2"></i>Assign Video
+                </button>
               </div>
             </div>
-          </div>
-          <div class="card-body p-0">
-            <div class="table-responsive">
-              <table class="table table-striped">
-                <thead>
-                  <tr>
-                    <th scope="col">&nbsp;</th>
-                    <th scope="col">Slot Name</th>
-                    <th scope="col">Time Range</th>
-                    <th scope="col">Duration Allocation</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Priority</th>
-                    <th scope="col">Assigned Videos</th>
-                    <th scope="col">Utilization</th>
-                    <th scope="col">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(slot, index) in filteredSlots" :key="slot.id">
-                    <td class="checkbox"><input type="checkbox" v-model="checkedItems" :value="slot.id" /></td>
-                    <td>
-                      <div class="font-weight-600">{{ slot.name }}</div>
-                      <div class="text-muted small">
-                        <span v-if="slot.allow_perfume" class="badge badge-primary badge-sm mr-1">Perfume</span>
-                        <span v-if="slot.allow_general" class="badge badge-success badge-sm">General</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div>{{ formatTimeOnly(slot.start_time) }} - {{ formatTimeOnly(slot.end_time) }}</div>
-                      <div class="text-muted small">{{ calculateSlotDuration(slot.start_time, slot.end_time) }} total
-                      </div>
-                    </td>
-                    <td>
-                      <div class="progress-group">
-                        <div class="progress-group-header">
-                          <div>Perfume: {{ slot.perfume_seconds }}s</div>
-                          <div>{{ Math.round((slot.perfume_seconds / 3600) * 100) }}%</div>
-                        </div>
-                        <div class="progress progress-sm">
-                          <div class="progress-bar bg-primary"
-                            :style="{ width: (slot.perfume_seconds / 3600) * 100 + '%' }"></div>
-                        </div>
-                      </div>
-                      <div class="progress-group mt-2">
-                        <div class="progress-group-header">
-                          <div>General: {{ slot.general_seconds }}s</div>
-                          <div>{{ Math.round((slot.general_seconds / 3600) * 100) }}%</div>
-                        </div>
-                        <div class="progress progress-sm">
-                          <div class="progress-bar bg-success"
-                            :style="{ width: (slot.general_seconds / 3600) * 100 + '%' }"></div>
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <span class="badge" :class="slot.status === 'ACTIVE' ? 'badge-success' : 'badge-secondary'">
-                        {{ slot.status }}
+            <div class="card-body">
+              <div class="assignment-matrix">
+                <div class="matrix-header">
+                  <div class="matrix-corner">Slots \ Videos</div>
+                  <div v-for="video in approvedVideos" :key="video.id" class="matrix-video-header">
+                    <div class="video-thumbnail">
+                      <img :src="getVideoThumbnail(video)" :alt="video.title" @error="handleImageError">
+                    </div>
+                    <div class="video-title">{{ video.title }}</div>
+                    <div class="video-brand">{{ video.brand?.name }}</div>
+                    <div class="video-type">
+                      <span class="badge" :class="getAdTypeBadgeClass(video.adType)">
+                        {{ video.adType }}
                       </span>
-                    </td>
-                    <td>
-                      <span class="badge" :class="getPriorityClass(slot.priority)">
-                        {{ slot.priority }}
-                      </span>
-                    </td>
-                    <td>
-                      <div class="text-center">
-                        <div class="font-weight-600">{{ slot.assignmentCount || 0 }}</div>
-                        <div class="text-muted small">videos</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="matrix-body">
+                  <div v-for="slot in slots" :key="slot.id" class="matrix-row">
+                    <div class="matrix-slot-header">
+                      <div class="slot-name">{{ slot.name }}</div>
+                      <div class="slot-time">{{ formatTimeOnly(slot.start_time) }} - {{ formatTimeOnly(slot.end_time) }}</div>
+                      <div class="slot-type">
+                        <span v-if="slot.allow_perfume" class="badge badge-primary badge-sm">P</span>
+                        <span v-if="slot.allow_general" class="badge badge-success badge-sm">G</span>
                       </div>
-                    </td>
-                    <td>
-                      <div class="progress" style="height: 6px;">
-                        <div class="progress-bar" :class="getUtilizationClass(slot.utilization)"
-                          :style="{ width: slot.utilization + '%' }"></div>
+                    </div>
+                    <div v-for="video in approvedVideos" :key="`${slot.id}-${video.id}`" 
+                         class="matrix-cell"
+                         :class="getAssignmentCellClass(slot, video)"
+                         @click="toggleAssignment(slot, video)"
+                         @dragover.prevent
+                         @drop="handleDrop(slot, video)">
+                      <div v-if="isAssigned(slot, video)" class="assignment-indicator">
+                        <i class="fas fa-check"></i>
                       </div>
-                      <small>{{ slot.utilization }}%</small>
-                    </td>
-                    <td>
-                      <div class="dropdown">
-                        <a href="#" data-toggle="dropdown"
-                          class="btn btn-sm btn-outline-primary dropdown-toggle">Actions</a>
-                        <div class="dropdown-menu">
-                          <a href="#" class="dropdown-item" @click="editSlot(slot)">Edit</a>
-                          <a href="#" class="dropdown-item" @click="viewAssignments(slot)">View Assignments</a>
-                          <a href="#" class="dropdown-item" @click="assignVideoToSlot(slot)">Assign Video</a>
-                          <a href="#" class="dropdown-item" @click="duplicateSlot(slot)">Duplicate</a>
-                          <div class="dropdown-divider"></div>
-                          <a href="#" class="dropdown-item text-danger" @click="deleteSlot(slot.id)">Delete</a>
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Video Assignment View -->
-    <div class="row" style="display: none;">
-      <div class="col-lg-8">
-        <div class="card">
-          <div class="card-header">
-            <h4>Manual Video Assignment</h4>
-            <div class="card-header-action">
-              <button class="btn btn-sm btn-primary" @click="showManualAssignmentForm = true">
-                <i class="fas fa-plus mr-2"></i>Assign Video
-              </button>
+        <div class="col-lg-4">
+          <div class="card">
+            <div class="card-header">
+              <h4>Available Videos</h4>
             </div>
-          </div>
-          <div class="card-body">
-            <div class="assignment-matrix">
-              <div class="matrix-header">
-                <div class="matrix-corner">Slots \ Videos</div>
-                <div v-for="video in approvedVideos" :key="video.id" class="matrix-video-header">
+            <div class="card-body">
+              <div class="video-list">
+                <div v-for="video in approvedVideos" :key="video.id" 
+                     class="video-item"
+                     :class="{ 'selected': selectedVideo?.id === video.id }"
+                     @click="selectVideo(video)"
+                     draggable="true"
+                     @dragstart="handleDragStart(video)">
                   <div class="video-thumbnail">
                     <img :src="getVideoThumbnail(video)" :alt="video.title" @error="handleImageError">
                   </div>
-                  <div class="video-title">{{ video.title }}</div>
-                  <div class="video-brand">{{ video.brand?.name }}</div>
-                  <div class="video-type">
-                    <span class="badge" :class="getAdTypeBadgeClass(video.adType)">
-                      {{ video.adType }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div class="matrix-body">
-                <div v-for="slot in slots" :key="slot.id" class="matrix-row">
-                  <div class="matrix-slot-header">
-                    <div class="slot-name">{{ slot.name }}</div>
-                    <div class="slot-time">{{ formatTimeOnly(slot.start_time) }} - {{ formatTimeOnly(slot.end_time) }}
+                  <div class="video-info">
+                    <div class="video-title">{{ video.title }}</div>
+                    <div class="video-meta">
+                      <span class="video-brand">{{ video.brand?.name }}</span>
+                      <span class="video-duration">{{ formatDuration(video.durationSeconds) }}</span>
                     </div>
-                    <div class="slot-type">
-                      <span v-if="slot.allow_perfume" class="badge badge-primary badge-sm">P</span>
-                      <span v-if="slot.allow_general" class="badge badge-success badge-sm">G</span>
-                    </div>
-                  </div>
-                  <div v-for="video in approvedVideos" :key="`${slot.id}-${video.id}`" class="matrix-cell"
-                    :class="getAssignmentCellClass(slot, video)" @click="toggleAssignment(slot, video)"
-                    @dragover.prevent @drop="handleDrop(slot, video)">
-                    <div v-if="isAssigned(slot, video)" class="assignment-indicator">
-                      <i class="fas fa-check"></i>
+                    <div class="video-type">
+                      <span class="badge" :class="getAdTypeBadgeClass(video.adType)">
+                        {{ video.adType }}
+                      </span>
                     </div>
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+          
+          <div class="card mt-4" v-if="selectedVideo">
+            <div class="card-header">
+              <h4>Video Preview</h4>
+            </div>
+            <div class="card-body p-0">
+              <VideoPreview :video="selectedVideo" />
             </div>
           </div>
         </div>
       </div>
-      <div class="col-lg-4">
-        <div class="card">
-          <div class="card-header">
-            <h4>Available Videos</h4>
-          </div>
-          <div class="card-body">
-            <div class="video-list">
-              <div v-for="video in approvedVideos" :key="video.id" class="video-item"
-                :class="{ 'selected': selectedVideo?.id === video.id }" @click="selectVideo(video)" draggable="true"
-                @dragstart="handleDragStart(video)">
-                <div class="video-thumbnail">
-                  <img :src="getVideoThumbnail(video)" :alt="video.title" @error="handleImageError">
-                </div>
-                <div class="video-info">
-                  <div class="video-title">{{ video.title }}</div>
-                  <div class="video-meta">
-                    <span class="video-brand">{{ video.brand?.name }}</span>
-                    <span class="video-duration">{{ formatDuration(video.durationSeconds) }}</span>
-                  </div>
-                  <div class="video-type">
-                    <span class="badge" :class="getAdTypeBadgeClass(video.adType)">
-                      {{ video.adType }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        <div class="card mt-4" v-if="selectedVideo">
-          <div class="card-header">
-            <h4>Video Preview</h4>
-          </div>
-          <div class="card-body p-0">
-            <VideoPreview :video="selectedVideo" />
-          </div>
-        </div>
-      </div>
+      
     </div>
   </section>
 
   <!-- Slot Form Modal -->
-  <div v-if="showSlotForm" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);"
-    @click.self="closeSlotForm">
+  <div v-if="showSlotForm" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeSlotForm">
     <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
@@ -526,8 +398,7 @@
               <div class="col-12 col-md-6">
                 <div class="form-group">
                   <label for="slotName">Slot Name</label>
-                  <input type="text" id="slotName" class="form-control" v-model="slotForm.name"
-                    placeholder="e.g., Morning Slot 8AM" required>
+                  <input type="text" id="slotName" class="form-control" v-model="slotForm.name" placeholder="e.g., Morning Slot 8AM" required>
                 </div>
               </div>
               <div class="col-12 col-md-6">
@@ -559,17 +430,14 @@
               <div class="col-12 col-md-6">
                 <div class="form-group">
                   <label for="perfumeDuration">Perfume Ad Duration (seconds)</label>
-                  <input type="number" id="perfumeDuration" class="form-control" v-model="slotForm.perfume_seconds"
-                    min="0" max="3600" placeholder="600">
-                  <small class="form-text text-muted">Maximum seconds allocated for perfume ads (triggered by
-                    machine)</small>
+                  <input type="number" id="perfumeDuration" class="form-control" v-model="slotForm.perfume_seconds" min="0" max="3600" placeholder="600">
+                  <small class="form-text text-muted">Maximum seconds allocated for perfume ads (triggered by machine)</small>
                 </div>
               </div>
               <div class="col-12 col-md-6">
                 <div class="form-group">
                   <label for="generalDuration">General Ad Duration (seconds)</label>
-                  <input type="number" id="generalDuration" class="form-control" v-model="slotForm.general_seconds"
-                    min="0" max="3600" placeholder="3000">
+                  <input type="number" id="generalDuration" class="form-control" v-model="slotForm.general_seconds" min="0" max="3600" placeholder="3000">
                   <small class="form-text text-muted">Remaining seconds for general brand ads</small>
                 </div>
               </div>
@@ -588,13 +456,11 @@
                 <div class="form-group">
                   <label>Configuration</label>
                   <div class="custom-control custom-checkbox">
-                    <input type="checkbox" class="custom-control-input" id="allow_perfume"
-                      v-model="slotForm.allow_perfume">
+                    <input type="checkbox" class="custom-control-input" id="allow_perfume" v-model="slotForm.allow_perfume">
                     <label class="custom-control-label" for="allow_perfume">Allow Perfume Ads</label>
                   </div>
                   <div class="custom-control custom-checkbox">
-                    <input type="checkbox" class="custom-control-input" id="allow_general"
-                      v-model="slotForm.allow_general">
+                    <input type="checkbox" class="custom-control-input" id="allow_general" v-model="slotForm.allow_general">
                     <label class="custom-control-label" for="allow_general">Allow General Ads</label>
                   </div>
                   <div class="custom-control custom-checkbox">
@@ -617,13 +483,11 @@
   </div>
 
   <!-- Slot Assignments Modal -->
-  <div v-if="showAssignmentsModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);"
-    @click.self="closeAssignmentsModal">
+  <div v-if="showAssignmentsModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeAssignmentsModal">
     <div class="modal-dialog modal-xl modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title">Assignments for {{ currentSlot?.name }} ({{ formatTimeOnly(currentSlot?.start_time) }}
-            - {{ formatTimeOnly(currentSlot?.end_time) }})</h5>
+          <h5 class="modal-title">Assignments for {{ currentSlot?.name }} ({{ formatTimeOnly(currentSlot?.start_time) }} - {{ formatTimeOnly(currentSlot?.end_time) }})</h5>
           <button type="button" class="btn-close" @click="closeAssignmentsModal"></button>
         </div>
         <div class="modal-body">
@@ -646,8 +510,7 @@
                   <td>
                     <div class="d-flex align-items-center">
                       <div class="video-thumbnail mr-3">
-                        <img :src="getVideoThumbnail(assignment.video)" :alt="assignment.video?.title"
-                          @error="handleImageError">
+                        <img :src="getVideoThumbnail(assignment.video)" :alt="assignment.video?.title" @error="handleImageError">
                       </div>
                       <div>
                         <div class="font-weight-600">{{ assignment.video?.title }}</div>
@@ -665,8 +528,7 @@
                   <td class="text-center">
                     <span v-if="!assignment.machine_id" class="badge badge-info">All Devices</span>
                     <div v-else>
-                      <span style="font-weight: bold">{{ assignment.machine?.code }}</span> <br /> <span
-                        style="font-size: 12px;">{{ assignment.machine?.position }}</span>
+                      <span style="font-weight: bold">{{ assignment.machine?.code }}</span> <br /> <span style="font-size: 12px;">{{ assignment.machine?.position }}</span>
                     </div>
                   </td>
                   <td>
@@ -705,8 +567,7 @@
   </div>
 
   <!-- Assignment Form Modal -->
-  <div v-if="showAssignmentForm" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);"
-    @click.self="closeAssignmentForm">
+  <div v-if="showAssignmentForm" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeAssignmentForm">
     <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
@@ -719,8 +580,7 @@
               <div class="col-12 col-md-6">
                 <div class="form-group">
                   <label for="assignmentVideo">Video</label>
-                  <select id="assignmentVideo" v-model="assignmentForm.video_id" @change="onVideoChange"
-                    class="form-control" required>
+                  <select id="assignmentVideo" v-model="assignmentForm.video_id" @change="onVideoChange" class="form-control" required>
                     <option value="">Select Video</option>
                     <option v-for="video in approvedVideos" :key="video.id" :value="video.id">
                       {{ video.title }} ({{ video.brand?.name }}) - {{ video.adType }}
@@ -749,8 +609,7 @@
                       {{ machine.code }} - {{ machine.position }}
                     </option>
                   </select>
-                  <small class="form-text text-muted">Select a specific device or leave blank to assign to all
-                    devices</small>
+                  <small class="form-text text-muted">Select a specific device or leave blank to assign to all devices</small>
                 </div>
               </div>
               <div class="col-12 col-md-6">
@@ -796,8 +655,7 @@
   </div>
 
   <!-- Video Assignment Modal -->
-  <div v-if="showVideoAssignmentModal" class="modal fade show"
-    style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeVideoAssignmentModal">
+  <div v-if="showVideoAssignmentModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeVideoAssignmentModal">
     <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
@@ -829,8 +687,7 @@
                       {{ machine.code }} - {{ machine.position }}
                     </option>
                   </select>
-                  <small class="form-text text-muted">Select a specific device or leave blank to assign to all
-                    devices</small>
+                  <small class="form-text text-muted">Select a specific device or leave blank to assign to all devices</small>
                 </div>
               </div>
             </div>
@@ -868,8 +725,7 @@
   </div>
 
   <!-- Video Preview Modal -->
-  <div v-if="showVideoPreviewModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);"
-    @click.self="closeVideoPreviewModal">
+  <div v-if="showVideoPreviewModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeVideoPreviewModal">
     <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
@@ -884,8 +740,7 @@
   </div>
 
   <!-- Video Information Modal -->
-  <div v-if="showVideoInfoModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);"
-    @click.self="closeVideoInfoModal">
+  <div v-if="showVideoInfoModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeVideoInfoModal">
     <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
@@ -900,10 +755,9 @@
                 <div class="time-arrow">→</div>
                 <div class="time-end">{{ formatTimeOnly(selectedSlot?.end_time) }}</div>
               </div>
-              <div class="time-duration">{{ calculateSlotDuration(selectedSlot?.start_time, selectedSlot?.end_time) }}
-              </div>
+              <div class="time-duration">{{ calculateSlotDuration(selectedSlot?.start_time, selectedSlot?.end_time) }}</div>
             </div>
-
+            
             <div class="slot-stats-grid">
               <div class="stat-card">
                 <div class="stat-icon video-count">
@@ -914,7 +768,7 @@
                   <div class="stat-label">Videos Assigned</div>
                 </div>
               </div>
-
+              
               <div class="stat-card">
                 <div class="stat-icon utilization">
                   <i class="fas fa-chart-pie"></i>
@@ -924,19 +778,18 @@
                   <div class="stat-label">Utilization Rate</div>
                 </div>
               </div>
-
+              
               <div class="stat-card">
                 <div class="stat-icon capacity">
                   <i class="fas fa-clock"></i>
                 </div>
                 <div class="stat-content">
-                  <div class="stat-number">{{ selectedSlot?.perfume_seconds + selectedSlot?.general_seconds || 0 }}
-                  </div>
+                  <div class="stat-number">{{ selectedSlot?.perfume_seconds + selectedSlot?.general_seconds || 0 }}</div>
                   <div class="stat-label">Total Capacity (s)</div>
                 </div>
               </div>
             </div>
-
+            
             <div class="slot-ad-types">
               <h6>Ad Types Configuration</h6>
               <div class="ad-types-grid">
@@ -963,7 +816,7 @@
                 </div>
               </div>
             </div>
-
+            
             <div class="assigned-videos-section">
               <div class="section-header">
                 <h6>Assigned Videos</h6>
@@ -974,8 +827,7 @@
               <div v-if="slotAssignments.length > 0" class="assigned-videos-grid">
                 <div v-for="assignment in slotAssignments" :key="assignment.id" class="video-card">
                   <div class="video-thumbnail">
-                    <img :src="getVideoThumbnail(assignment.video)" :alt="assignment.video?.title"
-                      @error="handleImageError">
+                    <img :src="getVideoThumbnail(assignment.video)" :alt="assignment.video?.title" @error="handleImageError">
                   </div>
                   <div class="video-info">
                     <div class="video-title">{{ assignment.video?.title }}</div>
@@ -1010,10 +862,9 @@
       </div>
     </div>
   </div>
-
+  
   <!-- Manual Video Assignment Modal -->
-  <div v-if="showManualAssignmentForm" class="modal fade show"
-    style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeManualAssignmentForm">
+  <div v-if="showManualAssignmentForm" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeManualAssignmentForm">
     <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
@@ -1037,8 +888,7 @@
               <div class="col-12 col-md-6">
                 <div class="form-group">
                   <label for="brandSelect">Select Brand</label>
-                  <select id="brandSelect" v-model="manualAssignmentForm.brand_id" @change="filterVideosByBrand"
-                    class="form-control" required>
+                  <select id="brandSelect" v-model="manualAssignmentForm.brand_id" @change="filterVideosByBrand" class="form-control" required>
                     <option value="">Choose a brand...</option>
                     <option v-for="brand in brands" :key="brand.id" :value="brand.id">
                       {{ brand.name }}
@@ -1070,8 +920,7 @@
                       {{ machine.code }} - {{ machine.position }}
                     </option>
                   </select>
-                  <small class="form-text text-muted">Select a specific device or leave blank to assign to all
-                    devices</small>
+                  <small class="form-text text-muted">Select a specific device or leave blank to assign to all devices</small>
                 </div>
               </div>
             </div>
@@ -1109,8 +958,7 @@
   </div>
 
   <!-- Machine Selection Modal -->
-  <div v-if="showMachineModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);"
-    @click.self="closeMachineSelectionModal">
+  <div v-if="showMachineModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeMachineSelectionModal">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
@@ -1246,7 +1094,7 @@ const anyChecked = computed(() => checkedItems.value.length > 0)
 
 const filteredSlots = computed(() => {
   let result = slots.value
-
+  
   // Apply search filter
   if (searchQuery.value) {
     result = result.filter(slot =>
@@ -1255,7 +1103,7 @@ const filteredSlots = computed(() => {
       (slot.end_time && slot.end_time.includes(searchQuery.value))
     )
   }
-
+  
   // Apply view filter
   if (currentFilter.value === 'active') {
     result = result.filter(slot => slot.status === 'ACTIVE')
@@ -1264,10 +1112,10 @@ const filteredSlots = computed(() => {
   } else if (currentFilter.value === 'general') {
     result = result.filter(slot => slot.allow_general)
   }
-
+  
   // Sort slots based on current time
   result = sortSlotsByCurrentTime(result)
-
+  
   return result
 })
 
@@ -1281,32 +1129,32 @@ const selectedAssignmentVideo = computed(() => {
 
 const filteredVideos = computed(() => {
   let result = approvedVideos.value
-
+  
   // Filter by brand if selected
   if (manualAssignmentForm.value.brand_id) {
     result = result.filter(video => video.brand?.id === manualAssignmentForm.value.brand_id)
   }
-
+  
   return result
 })
 
 // Methods
 const sortSlotsByCurrentTime = (slotsToSort) => {
   if (!slotsToSort || slotsToSort.length === 0) return []
-
+  
   // Get current time
   const now = new Date()
   const currentHour = now.getHours()
   const currentMinute = now.getMinutes()
   const currentTimeInMinutes = currentHour * 60 + currentMinute
-
+  
   // Helper function to convert time string to minutes since midnight
   const timeToMinutes = (timeString) => {
     if (!timeString) return 0
-
+    
     // Handle different time formats
     let hours = 0, minutes = 0
-
+    
     // Try to match HH:MM format
     const timeMatch = timeString.match(/(\d{1,2}):(\d{2})(?::\d{2})?/)
     if (timeMatch) {
@@ -1320,23 +1168,23 @@ const sortSlotsByCurrentTime = (slotsToSort) => {
         minutes = date.getMinutes()
       }
     }
-
+    
     return hours * 60 + minutes
   }
-
+  
   // Categorize slots
   const currentSlots = []
   const upcomingSlots = []
   const pastSlots = []
-
+  
   slotsToSort.forEach(slot => {
     const startTimeMinutes = timeToMinutes(slot.start_time)
     const endTimeMinutes = timeToMinutes(slot.end_time)
-
+    
     // Handle slots that cross midnight (end time < start time)
     let isCurrent = false
     let isPast = false
-
+    
     if (endTimeMinutes > startTimeMinutes) {
       // Normal slot (doesn't cross midnight)
       if (currentTimeInMinutes >= startTimeMinutes && currentTimeInMinutes < endTimeMinutes) {
@@ -1352,7 +1200,7 @@ const sortSlotsByCurrentTime = (slotsToSort) => {
         isPast = true
       }
     }
-
+    
     if (isCurrent) {
       currentSlots.push(slot)
     } else if (isPast) {
@@ -1361,18 +1209,18 @@ const sortSlotsByCurrentTime = (slotsToSort) => {
       upcomingSlots.push(slot)
     }
   })
-
+  
   // Sort each category by start time
   const sortByStartTime = (a, b) => {
     const aStart = timeToMinutes(a.start_time)
     const bStart = timeToMinutes(b.start_time)
     return aStart - bStart
   }
-
+  
   currentSlots.sort(sortByStartTime)
   upcomingSlots.sort(sortByStartTime)
   pastSlots.sort(sortByStartTime)
-
+  
   // Combine: current slots first, then upcoming, then past
   return [...currentSlots, ...upcomingSlots, ...pastSlots]
 }
@@ -1383,7 +1231,7 @@ const fetchSlots = async () => {
     const response = await fetchWithAuth(`${apiUrl}/api/slots`, {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     })
-
+    
     const data = await response.json()
     if (data.success) {
       slots.value = data.data || []
@@ -1402,7 +1250,7 @@ const fetchSlotAssignments = async (slot_id) => {
     const response = await fetchWithAuth(`${apiUrl}/api/slot-assignment/slot/${slot_id}`, {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     })
-
+    
     const data = await response.json()
     if (data.success) {
       slotAssignments.value = data.data || []
@@ -1423,7 +1271,7 @@ const fetchVideos = async () => {
     const response = await fetchWithAuth(`${apiUrl}/api/video`, {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     })
-
+    
     const data = await response.json()
     if (data.success) {
       videos.value = data.data || []
@@ -1440,7 +1288,7 @@ const fetchBrands = async () => {
     const response = await fetchWithAuth(`${apiUrl}/api/brand`, {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     })
-
+    
     const data = await response.json()
     if (data.success) {
       brands.value = data.data || []
@@ -1457,7 +1305,7 @@ const fetchMachines = async () => {
     const response = await fetchWithAuth(`${apiUrl}/api/device/dropdown`, {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     })
-
+    
     const data = await response.json()
     if (data.success) {
       machines.value = data.data || []
@@ -1473,7 +1321,7 @@ const calculateStats = () => {
   const perfume_slots = slots.value.filter(s => s.allow_perfume).length
   const general_slots = slots.value.filter(s => s.allow_general).length
   const totalUtilization = slots.value.reduce((sum, s) => sum + (s.utilization || 0), 0)
-
+  
   slotStats.value = {
     active_slots,
     total_slots: slots.value.length,
@@ -1522,14 +1370,14 @@ const getAdTypeBadgeClass = (type) => {
 const calculateSlotDuration = (start_time, end_time) => {
   const formattedstart_time = formatTimeOnly(start_time)
   const formattedend_time = formatTimeOnly(end_time)
-
+  
   const start = new Date(`2000-01-01 ${formattedstart_time}`)
   const end = new Date(`2000-01-01 ${formattedend_time}`)
-
+  
   if (end < start) {
     end.setDate(end.getDate() + 1)
   }
-
+  
   const diffMs = end - start
   const diffMins = Math.floor(diffMs / 60000)
   return `${Math.floor(diffMins / 60)}h ${diffMins % 60}m`
@@ -1550,14 +1398,14 @@ const formatDate = (dateString) => {
 
 const formatTimeOnly = (dateTimeString) => {
   if (!dateTimeString) return 'N/A'
-
+  
   if (dateTimeString.includes('BC') || dateTimeString.startsWith('0001')) {
     const timeMatch = dateTimeString.match(/(\d{2}):(\d{2}):(\d{2})/)
     if (timeMatch) {
       return `${timeMatch[1]}:${timeMatch[2]}`
     }
   }
-
+  
   try {
     const date = new Date(dateTimeString)
     if (isNaN(date.getTime())) {
@@ -1584,7 +1432,7 @@ const formatTimeOnly = (dateTimeString) => {
 const getVideoThumbnail = (video) => {
   // console.log('Getting thumbnail for video:', video);
   if (!video) return '/img/video-placeholder.svg'
-
+  
   if (video.thumbnail_path) {
     if (video.thumbnail_path.startsWith('/')) {
       return video.thumbnail_path
@@ -1594,12 +1442,12 @@ const getVideoThumbnail = (video) => {
     }
     return `/${video.thumbnail_path}`
   }
-
+  
   if (video.file) {
     const baseName = video.file.substring(0, video.file.lastIndexOf('.'))
     return `/uploads/videos/thumbnails/${baseName}_thumb.jpg`
   }
-
+  
   return '/img/video-placeholder.svg'
 }
 
@@ -1645,10 +1493,10 @@ const saveSlot = async () => {
     saving.value = true
     const accessToken = localStorage.getItem('access_token')
     const method = editingSlot.value ? 'PUT' : 'POST'
-    const url = editingSlot.value
+    const url = editingSlot.value 
       ? `${apiUrl}/api/slots/${editingSlot.value.id}`
       : `${apiUrl}/api/slots`
-
+    
     const response = await fetchWithAuth(url, {
       method,
       headers: {
@@ -1657,7 +1505,7 @@ const saveSlot = async () => {
       },
       body: JSON.stringify(slotForm.value)
     })
-
+    
     const data = await response.json()
     if (data.success) {
       $toast.success(`Slot ${editingSlot.value ? 'updated' : 'created'} successfully`, { duration: 5000, position: 'top-right' })
@@ -1676,14 +1524,14 @@ const saveSlot = async () => {
 
 const deleteSlot = async (slot_id) => {
   if (!confirm('Are you sure you want to delete this slot?')) return
-
+  
   try {
     const accessToken = localStorage.getItem('access_token')
     const response = await fetchWithAuth(`${apiUrl}/api/slots/${slot_id}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${accessToken}` }
     })
-
+    
     const data = await response.json()
     if (data.success) {
       $toast.success('Slot deleted successfully', { duration: 5000, position: 'top-right' })
@@ -1718,17 +1566,17 @@ const toggleAll = (event) => {
 
 const deleteSelectedSlots = async () => {
   if (!confirm(`Are you sure you want to delete ${checkedItems.value.length} slots?`)) return
-
+  
   try {
     const accessToken = localStorage.getItem('access_token')
     const strIDs = checkedItems.value.join(",")
     const response = await fetchWithAuth(`${apiUrl}/api/slots/${strIDs}`, {
       method: 'DELETE',
-      headers: {
+      headers: { 
         'Authorization': `Bearer ${accessToken}`,
       }
     })
-
+    
     const data = await response.json()
     if (data.success) {
       $toast.success('Slots deleted successfully', { duration: 5000, position: 'top-right' })
@@ -1812,10 +1660,10 @@ const saveAssignment = async () => {
     savingAssignment.value = true
     const accessToken = localStorage.getItem('access_token')
     const method = editingAssignment.value ? 'PUT' : 'POST'
-    const url = editingAssignment.value
+    const url = editingAssignment.value 
       ? `${apiUrl}/api/slot-assignment/${editingAssignment.value.id}`
       : `${apiUrl}/api/slot-assignment`
-
+    
     const response = await fetchWithAuth(url, {
       method,
       headers: {
@@ -1824,7 +1672,7 @@ const saveAssignment = async () => {
       },
       body: JSON.stringify(assignmentForm.value)
     })
-
+    
     const data = await response.json()
     if (data.success) {
       $toast.success(`Assignment ${editingAssignment.value ? 'updated' : 'created'} successfully`, { duration: 5000, position: 'top-right' })
@@ -1843,14 +1691,14 @@ const saveAssignment = async () => {
 
 const deleteAssignment = async (assignment) => {
   if (!confirm('Are you sure you want to delete this assignment?')) return
-
+  
   try {
     const accessToken = localStorage.getItem('access_token')
     const response = await fetchWithAuth(`${apiUrl}/api/slot-assignment/${assignment.id}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${accessToken}` }
     })
-
+    
     const data = await response.json()
     if (data.success) {
       $toast.success('Assignment deleted successfully', { duration: 5000, position: 'top-right' })
@@ -1913,29 +1761,29 @@ const saveVideoAssignment = async () => {
 
     // Check if the video is already assigned to this slot on the same device
     let existingAssignment = null
-
+    
     if (videoAssignmentForm.value.machine_id) {
       // Check for assignment on specific device
-      existingAssignment = slotAssignments.value.find(a =>
-        a.video_id === videoAssignmentForm.value.video_id &&
+      existingAssignment = slotAssignments.value.find(a => 
+        a.video_id === videoAssignmentForm.value.video_id && 
         a.slot_id === currentSlot.value.id &&
         a.machine_id === videoAssignmentForm.value.machine_id &&
         a.status === 'ACTIVE'
       )
-
+      
       if (existingAssignment) {
         $toast.error('This video is already assigned to this slot on the selected device', { duration: 5000, position: 'top-right' })
         return
       }
     } else {
       // Check for assignment on all devices (no specific device)
-      existingAssignment = slotAssignments.value.find(a =>
-        a.video_id === videoAssignmentForm.value.video_id &&
+      existingAssignment = slotAssignments.value.find(a => 
+        a.video_id === videoAssignmentForm.value.video_id && 
         a.slot_id === currentSlot.value.id &&
         !a.machine_id && // Assignment for all devices
         a.status === 'ACTIVE'
       )
-
+      
       if (existingAssignment) {
         $toast.error('This video is already assigned to this slot for all devices', { duration: 5000, position: 'top-right' })
         return
@@ -1944,20 +1792,20 @@ const saveVideoAssignment = async () => {
 
     savingVideoAssignment.value = true
     const accessToken = localStorage.getItem('access_token')
-
+    
     // Set default dates
     const today = new Date().toISOString().split('T')[0]
     const thirtyDaysLater = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-
+    
     const assignmentData = {
       ...videoAssignmentForm.value,
       start_date: today,
       end_date: thirtyDaysLater,
       ad_type: selectedVideo.adType // Automatically set based on video type
     }
-
+    
     console.log('Sending assignment data:', assignmentData)
-
+    
     const response = await fetchWithAuth(`${apiUrl}/api/slot-assignment`, {
       method: 'POST',
       headers: {
@@ -1966,7 +1814,7 @@ const saveVideoAssignment = async () => {
       },
       body: JSON.stringify(assignmentData)
     })
-
+    
     const data = await response.json()
     if (data.success) {
       $toast.success('Video assigned successfully', { duration: 5000, position: 'top-right' })
@@ -1993,15 +1841,15 @@ const saveVideoAssignment = async () => {
 
 // Assignment matrix methods
 const isAssigned = (slot, video) => {
-  return slotAssignments.value.some(a =>
+  return slotAssignments.value.some(a => 
     a.slot_id === slot.id && a.video_id === video.id && a.status === 'ACTIVE'
   )
 }
 
 const getAssignmentCellClass = (slot, video) => {
-  const isCompatible = (video.adType === 'perfume' && slot.allow_perfume) ||
-    (video.adType === 'general' && slot.allow_general)
-
+  const isCompatible = (video.adType === 'perfume' && slot.allow_perfume) || 
+                       (video.adType === 'general' && slot.allow_general)
+  
   return {
     'assigned': isAssigned(slot, video),
     'compatible': isCompatible,
@@ -2011,12 +1859,12 @@ const getAssignmentCellClass = (slot, video) => {
 
 const toggleAssignment = async (slot, video) => {
   const isVideoAssigned = isAssigned(slot, video)
-
+  
   if (isVideoAssigned) {
-    const assignment = slotAssignments.value.find(a =>
+    const assignment = slotAssignments.value.find(a => 
       a.slot_id === slot.id && a.video_id === video.id && a.status === 'ACTIVE'
     )
-
+    
     if (assignment) {
       await deleteAssignment(assignment)
     }
@@ -2029,7 +1877,7 @@ const toggleAssignment = async (slot, video) => {
       end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       status: 'ACTIVE'
     }
-
+    
     await saveAssignment()
   }
 }
@@ -2044,7 +1892,7 @@ const autoAssignVideos = async () => {
         'Content-Type': 'application/json'
       }
     })
-
+    
     const data = await response.json()
     if (data.success) {
       $toast.success('Videos auto-assigned successfully', { duration: 5000, position: 'top-right' })
@@ -2096,7 +1944,7 @@ const filterVideosByBrand = async () => {
     filteredVideos.value = videos.value
     return
   }
-
+  
   try {
     const accessToken = localStorage.getItem('access_token')
     const response = await fetchWithAuth(`${apiUrl}/api/video/brand/${manualAssignmentForm.value.brand_id}`, {
@@ -2106,7 +1954,7 @@ const filterVideosByBrand = async () => {
         'Content-Type': 'application/json'
       }
     })
-
+    
     const data = await response.json()
     if (data.success) {
       filteredVideos.value = data.data
@@ -2148,26 +1996,26 @@ const saveManualAssignment = async () => {
     // If no device is selected (machine_id is empty), check for any assignment on this slot
     if (manualAssignmentForm.value.machine_id) {
       // Check for assignment on specific device
-      const existingAssignment = slotAssignments.value.find(a =>
-        a.video_id === manualAssignmentForm.value.video_id &&
+      const existingAssignment = slotAssignments.value.find(a => 
+        a.video_id === manualAssignmentForm.value.video_id && 
         a.slot_id === manualAssignmentForm.value.slot_id &&
         a.machine_id === manualAssignmentForm.value.machine_id &&
         a.status === 'ACTIVE'
       )
-
+      
       if (existingAssignment) {
         $toast.error('This video is already assigned to this slot on the selected device', { duration: 5000, position: 'top-right' })
         return
       }
     } else {
       // Check for assignment on all devices (no specific device)
-      const existingAssignment = slotAssignments.value.find(a =>
-        a.video_id === manualAssignmentForm.value.video_id &&
+      const existingAssignment = slotAssignments.value.find(a => 
+        a.video_id === manualAssignmentForm.value.video_id && 
         a.slot_id === manualAssignmentForm.value.slot_id &&
         !a.machine_id && // Assignment for all devices
         a.status === 'ACTIVE'
       )
-
+      
       if (existingAssignment) {
         $toast.error('This video is already assigned to this slot for all devices', { duration: 5000, position: 'top-right' })
         return
@@ -2176,18 +2024,18 @@ const saveManualAssignment = async () => {
 
     savingManualAssignment.value = true
     const accessToken = localStorage.getItem('access_token')
-
+    
     // Set default dates
     const today = new Date().toISOString().split('T')[0]
     const thirtyDaysLater = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-
+    
     const assignmentData = {
       ...manualAssignmentForm.value,
       start_date: today,
       end_date: thirtyDaysLater,
       ad_type: selectedVideo.adType // Automatically set based on video type
     }
-
+    
     const response = await fetchWithAuth(`${apiUrl}/api/slot-assignment`, {
       method: 'POST',
       headers: {
@@ -2196,7 +2044,7 @@ const saveManualAssignment = async () => {
       },
       body: JSON.stringify(assignmentData)
     })
-
+    
     const data = await response.json()
     if (data.success) {
       $toast.success('Video assigned successfully', { duration: 5000, position: 'top-right' })
@@ -2236,21 +2084,21 @@ const openVideoPlayer = () => {
     $toast.error('Please select a machine', { duration: 5000, position: 'top-right' })
     return
   }
-
+  
   // Find the selected machine to get its code
   const selectedMachine = machines.value.find(m => m.id === selectedMachineId.value)
   if (!selectedMachine) {
     $toast.error('Invalid machine selection', { duration: 5000, position: 'top-right' })
     return
   }
-
+  
   // Open video player in a new tab with the machine code
   const videoPlayerUrl = `/video-player?machineId=${selectedMachine.code}`
   window.open(videoPlayerUrl, '_blank')
-
+  
   // Close the modal
   closeMachineSelectionModal()
-
+  
   $toast.success(`Opening video player for machine ${selectedMachine.code}`, { duration: 5000, position: 'top-right' })
 }
 
@@ -2305,7 +2153,7 @@ const openVideoPlayer = () => {
   background: white;
   border-radius: 12px;
   padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
   border: 2px solid transparent;
   transition: all 0.3s ease;
   cursor: pointer;
@@ -2327,7 +2175,7 @@ const openVideoPlayer = () => {
 
 .slot-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.12);
 }
 
 .slot-card:hover::before {
@@ -2516,8 +2364,7 @@ const openVideoPlayer = () => {
   margin-bottom: 12px;
 }
 
-.time-start,
-.time-end {
+.time-start, .time-end {
   background: #6777ef;
   color: white;
   padding: 12px 20px;
@@ -2551,14 +2398,14 @@ const openVideoPlayer = () => {
   background: white;
   border-radius: 12px;
   padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
   border: 1px solid #e9ecef;
   transition: all 0.3s ease;
 }
 
 .stat-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.12);
 }
 
 .stat-card .stat-icon {
@@ -2654,7 +2501,7 @@ const openVideoPlayer = () => {
   background: white;
   border-radius: 12px;
   padding: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
   border: 1px solid #e9ecef;
   display: flex;
   gap: 12px;
@@ -2664,7 +2511,7 @@ const openVideoPlayer = () => {
 
 .video-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.12);
 }
 
 .video-thumbnail {
@@ -2925,30 +2772,12 @@ const openVideoPlayer = () => {
   border-radius: 6px;
 }
 
-.badge-primary {
-  background-color: #007bff;
-}
-
-.badge-success {
-  background-color: #28a745;
-}
-
-.badge-warning {
-  background-color: #ffc107;
-  color: #212529;
-}
-
-.badge-danger {
-  background-color: #dc3545;
-}
-
-.badge-info {
-  background-color: #17a2b8;
-}
-
-.badge-secondary {
-  background-color: #6c757d;
-}
+.badge-primary { background-color: #007bff; }
+.badge-success { background-color: #28a745; }
+.badge-warning { background-color: #ffc107; color: #212529; }
+.badge-danger { background-color: #dc3545; }
+.badge-info { background-color: #17a2b8; }
+.badge-secondary { background-color: #6c757d; }
 
 .progress {
   background-color: #e9ecef;
@@ -2976,34 +2805,33 @@ const openVideoPlayer = () => {
   .hours-header {
     grid-template-columns: repeat(12, 1fr);
   }
-
+  
   .slots-grid {
     grid-template-columns: 1fr;
   }
-
+  
   .slot-stats {
     grid-template-columns: 1fr;
   }
-
+  
   .slot-stats-grid {
     grid-template-columns: 1fr;
   }
-
+  
   .ad-types-grid {
     grid-template-columns: 1fr;
   }
-
+  
   .assigned-videos-grid {
     grid-template-columns: 1fr;
   }
-
+  
   .time-range {
     flex-direction: column;
     gap: 8px;
   }
-
-  .time-start,
-  .time-end {
+  
+  .time-start, .time-end {
     min-width: auto;
     width: 100%;
   }
