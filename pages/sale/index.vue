@@ -140,6 +140,15 @@
         <div class="card-header">
           <h4>Sales Records</h4>
           <div class="card-header-action">
+            <button
+              class="btn btn-sm btn-primary"
+              @click="exportSales"
+              :disabled="isExporting || sales.length === 0"
+            >
+              <span v-if="isExporting" class="spinner-border spinner-border-sm mr-1"></span>
+              <i class="fas fa-download mr-1"></i>
+              {{ isExporting ? 'Exporting...' : 'Export CSV' }}
+            </button>
             <span class="text-muted" v-if="pagination.total">
               Showing {{ pagination.from || 0 }} to {{ pagination.to || 0 }} of {{ pagination.total }} entries
             </span>
@@ -270,6 +279,7 @@ const pagination = ref({
 })
 const loading = ref(false)
 const approving = ref(null)
+const isExporting = ref(false)
 let searchTimeout = null
 
 // Computed properties
@@ -499,6 +509,148 @@ const approveSale = async (sale) => {
   }
 }
 
+// Export functions
+const exportSales = async () => {
+  isExporting.value = true;
+  try {
+    // Fetch all sales data (without pagination)
+    const allSalesData = await fetchAllSalesData();
+
+    const csvData = generateSalesCSVData(allSalesData);
+    const filename = `sales-export-${new Date().toISOString().split('T')[0]}.csv`;
+    downloadSalesCSV(csvData, filename);
+
+    // Show success notification if toast is available
+    if (window.$toast) {
+      window.$toast.success('Sales data exported successfully!', { duration: 3000, position: 'top-right' });
+    } else {
+      // Fallback to alert if toast is not available
+      alert('Sales data exported successfully!');
+    }
+  } catch (error) {
+    console.error('Export error:', error);
+    if (window.$toast) {
+      window.$toast.error('Failed to export sales data', { duration: 5000, position: 'top-right' });
+    } else {
+      alert('Failed to export sales data');
+    }
+  } finally {
+    isExporting.value = false;
+  }
+};
+
+// Fetch all sales data for export
+const fetchAllSalesData = async () => {
+  try {
+    // Create a copy of current filters but remove pagination
+    const exportFilters = { ...filters.value };
+    delete exportFilters.page;
+    delete exportFilters.limit;
+
+    // Set a high limit to get all data
+    exportFilters.limit = 10000;
+
+    const params = new URLSearchParams();
+    Object.keys(exportFilters).forEach(key => {
+      if (exportFilters[key] !== '' && exportFilters[key] !== null) {
+        params.append(key, exportFilters[key]);
+      }
+    });
+
+    const response = await fetchWithAuth(`${apiUrl}/api/sales?${params.toString()}`);
+    const data = await response.json();
+
+    if (data.success) {
+      return data.data;
+    } else {
+      throw new Error(data.message || 'Failed to fetch all sales data');
+    }
+  } catch (error) {
+    console.error('Error fetching all sales data:', error);
+    // Fallback to current page data if fetching all fails
+    return sales.value;
+  }
+};
+
+// Generate CSV data for sales
+const generateSalesCSVData = (salesData = null) => {
+  const dataToExport = salesData || sales.value;
+
+  // Add summary information at the top
+  const summaryData = [
+    ['Sales Export Report'],
+    ['Generated Date', new Date().toLocaleString()],
+    ['Export Period', `${filters.value.date_from || 'All time'} to ${filters.value.date_to || 'Present'}`],
+    ['Total Records', dataToExport.length],
+    ['Filter Applied', filters.value.q ? `Search: ${filters.value.q}` : 'None'],
+    ['', '', '', '', '', '', '', '', ''], // Empty row for separation
+  ];
+
+  const headers = ['Sales Code', 'Date', 'Device', 'Product', 'Brand', 'Quantity', 'Price', 'Total', 'Status'];
+  const salesRows = [];
+
+  dataToExport.forEach(sale => {
+    salesRows.push([
+      sale.sales_code || '',
+      formatDate(sale.created_at),
+      sale.machine?.machine_code || sale.machine?.code || 'N/A',
+      sale.product?.name || 'N/A',
+      sale.product?.brand?.name || 'N/A',
+      sale.quantity || 0,
+      `Rp ${formatNumber(sale.selling_price)}`,
+      `Rp ${formatNumber(sale.total_price)}`,
+      sale.payment_status || 'N/A'
+    ]);
+  });
+
+  // Add summary statistics at the end
+  const totalRevenue = dataToExport.reduce((sum, sale) => sum + (sale.total_price || 0), 0);
+  const totalQuantity = dataToExport.reduce((sum, sale) => sum + (sale.quantity || 0), 0);
+  const paidSales = dataToExport.filter(sale => sale.payment_status === 'paid').length;
+  const pendingSales = dataToExport.filter(sale => sale.payment_status === 'pending').length;
+
+  const summaryFooter = [
+    ['', '', '', '', '', '', '', '', ''], // Empty row for separation
+    ['SUMMARY STATISTICS'],
+    ['Total Revenue', '', '', '', '', '', '', `Rp ${formatNumber(totalRevenue)}`, ''],
+    ['Total Quantity Sold', '', '', '', '', totalQuantity, '', '', ''],
+    ['Paid Sales', '', '', '', '', paidSales, '', '', ''],
+    ['Pending Sales', '', '', '', '', pendingSales, '', '', ''],
+  ];
+
+  return {
+    headers,
+    data: [...summaryData, ...salesRows, ...summaryFooter]
+  };
+};
+
+// Download CSV file for sales
+const downloadSalesCSV = (csvData, filename) => {
+  let csvContent = csvData.headers.join(',') + '\n';
+
+  csvData.data.forEach(row => {
+    // Escape commas and quotes in data
+    const escapedRow = row.map(cell => {
+      if (typeof cell === 'string' && (cell.includes(',') || cell.includes('"'))) {
+        return `"${cell.replace(/"/g, '""')}"`;
+      }
+      return cell;
+    });
+    csvContent += escapedRow.join(',') + '\n';
+  });
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
 // Lifecycle
 onMounted(async () => {
   await Promise.all([
@@ -567,6 +719,23 @@ onMounted(async () => {
 }
 
 .btn-success:disabled {
+  background-color: #6c757d;
+  border-color: #6c757d;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background-color: #007bff;
+  border-color: #007bff;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #0056b3;
+  border-color: #004085;
+}
+
+.btn-primary:disabled {
   background-color: #6c757d;
   border-color: #6c757d;
   cursor: not-allowed;

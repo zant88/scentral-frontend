@@ -297,6 +297,16 @@
   }
 
   onMounted(async () => {
+    // Check authentication on client side
+    const accessToken = localStorage.getItem('access_token');
+    const currentPath = window.location.pathname;
+    
+    // If not logged in and not on login page, redirect to login
+    if (!accessToken && currentPath !== '/login') {
+      window.location.href = '/login';
+      return;
+    }
+    
     await Promise.all([loadNotifications(), loadUnreadCount()]);
   });
 </script>

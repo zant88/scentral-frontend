@@ -115,11 +115,11 @@
         <div class="col-md-4">
           <div class="card">
             <div class="card-header">
-              <h4>Ad Type Performance</h4>
+              <h4>Video Status Distribution</h4>
             </div>
             <div class="card-body">
               <div class="chart-container">
-                <canvas id="adTypeChart"></canvas>
+                <canvas id="videoStatusChart"></canvas>
               </div>
             </div>
           </div>
@@ -299,7 +299,7 @@ definePageMeta({
   middleware: 'brand'
 })
 
-import { ref, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { fetchWithAuth } from '~/utils/auth.js';
 import { useToast } from 'vue-toast-notification';
@@ -329,6 +329,9 @@ const analytics = ref({
 const videoAnalytics = ref([]);
 const recentActivities = ref([]);
 const selectedPeriod = ref('30d');
+
+// Video status distribution for pie chart
+const videoStatusDistribution = ref([]);
 
 // Tooltip state
 const tooltip = ref({
@@ -361,28 +364,77 @@ const navigateTo = (path) => {
 const fetchBrandInfo = async () => {
   try {
     const accessToken = localStorage.getItem('access_token');
-    const response = await fetchWithAuth(`${apiUrl}/api/brand/profile`, {
+    const response = await fetchWithAuth(`${apiUrl}/api/brand/dashboard/profile`, {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     });
     const data = await response.json();
     if (data.success) {
-      brandInfo.value = data.data;
+      // Set brand basic info
+      brandInfo.value = {
+        id: data.data.id,
+        name: data.data.name,
+        description: data.data.description,
+        balance: data.data.balance,
+        email: data.data.email,
+        logo_url: data.data.logo_url,
+        logo: data.data.logo,
+        is_active: data.data.is_active,
+        contact_info: data.data.contact_info,
+        created_at: data.data.created_at,
+        updated_at: data.data.updated_at
+      };
+
+      // Update analytics with stats from profile response
+      if (data.data.stats) {
+        analytics.value = {
+          total_plays: data.data.stats.total_plays || 0,
+          total_spend: data.data.stats.total_spend || 0,
+          active_videos: data.data.stats.active_videos || 0,
+          total_videos: data.data.stats.total_videos || 0,
+          general_plays: 0, // These need separate API call
+          perfume_plays: 0  // These need separate API call
+        };
+      }
+
+      // Update recent activities from profile response
+      if (data.recent_activities && data.recent_activities.length > 0) {
+        recentActivities.value = data.recent_activities.map(activity => ({
+          id: activity.type + '_' + activity.created_at,
+          type: activity.type,
+          title: activity.title,
+          description: activity.description,
+          created_at: activity.created_at
+        }));
+      }
+
+      // Update video status distribution for pie chart
+      if (data.video_status_distribution && data.video_status_distribution.length > 0) {
+        videoStatusDistribution.value = data.video_status_distribution;
+        console.log('Video status distribution loaded:', videoStatusDistribution.value);
+      } else {
+        console.log('No video status distribution data found');
+      }
     }
   } catch (error) {
     console.error('Error fetching brand info:', error);
   }
 };
 
-// Fetch analytics data
+// Fetch analytics data (ad type breakdown - general_plays and perfume_plays)
 const fetchAnalytics = async () => {
   try {
     const accessToken = localStorage.getItem('access_token');
-    const response = await fetchWithAuth(`${apiUrl}/api/analytics/brand?period=${selectedPeriod.value}`, {
+    const response = await fetchWithAuth(`${apiUrl}/api/brand/dashboard/stats`, {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     });
     const data = await response.json();
     if (data.success) {
-      analytics.value = data.data;
+      // Merge the ad type breakdown data with existing analytics
+      analytics.value = {
+        ...analytics.value,
+        general_plays: data.data.general_plays || 0,
+        perfume_plays: data.data.perfume_plays || 0
+      };
     }
   } catch (error) {
     console.error('Error fetching analytics:', error);
@@ -393,7 +445,7 @@ const fetchAnalytics = async () => {
 const fetchVideoAnalytics = async () => {
   try {
     const accessToken = localStorage.getItem('access_token');
-    const response = await fetchWithAuth(`${apiUrl}/api/analytics/videos?period=${selectedPeriod.value}`, {
+    const response = await fetchWithAuth(`${apiUrl}/api/brand/dashboard/videos`, {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     });
     const data = await response.json();
@@ -405,11 +457,16 @@ const fetchVideoAnalytics = async () => {
   }
 };
 
-// Fetch recent activities
+// Fetch additional recent activities (if needed beyond profile activities)
 const fetchRecentActivities = async () => {
   try {
+    // Only fetch additional activities if we don't already have them from profile
+    if (recentActivities.value.length > 0) {
+      return;
+    }
+
     const accessToken = localStorage.getItem('access_token');
-    const response = await fetchWithAuth(`${apiUrl}/api/analytics/activities?limit=10`, {
+    const response = await fetchWithAuth(`${apiUrl}/api/brand/dashboard/activities`, {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     });
     const data = await response.json();
@@ -445,6 +502,20 @@ const updateCurrentPeriodSpend = () => {
   }
 };
 
+// Watch for changes in video status distribution and re-render chart
+watch(videoStatusDistribution, () => {
+  nextTick(() => {
+    renderVideoStatusChart();
+  });
+}, { deep: true });
+
+// Watch for changes in balance data and re-render chart
+watch(balanceData, () => {
+  nextTick(() => {
+    renderBalanceChart();
+  });
+}, { deep: true });
+
 // Update balance chart when period changes
 const updateBalanceChart = async () => {
   updateCurrentPeriodSpend();
@@ -459,7 +530,7 @@ const handleResize = () => {
 
 // Update all analytics
 const updateAnalytics = async () => {
-  await fetchAnalytics();
+  await fetchAnalytics(); // Only fetches ad type breakdown (general/perfume plays)
   await fetchVideoAnalytics();
   await nextTick();
   renderCharts();
@@ -468,7 +539,7 @@ const updateAnalytics = async () => {
 // Render charts
 const renderCharts = () => {
   renderBalanceChart();
-  renderAdTypeChart();
+  renderVideoStatusChart();
 };
 
 const renderBalanceChart = () => {
@@ -491,7 +562,9 @@ const renderBalanceChart = () => {
   ctx.clearRect(0, 0, width, height);
   
   // Get balance data for selected period
+  console.log('Balance data loaded:', balanceData.value);
   const periodData = balanceData.value.periods[selectedBalancePeriod.value];
+  console.log('Period data for', selectedBalancePeriod.value, ':', periodData);
   if (!periodData || !periodData.balance_data || periodData.balance_data.length === 0) {
     // Show no data message
     ctx.fillStyle = '#6c757d';
@@ -700,97 +773,110 @@ const renderBalanceChart = () => {
   };
 };
 
-const renderAdTypeChart = () => {
-  const canvas = document.getElementById('adTypeChart');
+const renderVideoStatusChart = () => {
+  const canvas = document.getElementById('videoStatusChart');
   if (!canvas) return;
-  
+
   const container = canvas.parentElement;
   const width = container.offsetWidth;
   const height = 300;
-  
+
   // Set canvas dimensions
   canvas.width = width;
   canvas.height = height;
   canvas.style.width = '100%';
   canvas.style.height = height + 'px';
-  
+
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, width, height);
-  
-  const total = analytics.value.general_plays + analytics.value.perfume_plays;
-  if (total === 0) {
+
+  // Check if we have video status distribution data
+  console.log('Rendering video status chart with data:', videoStatusDistribution.value);
+  if (!videoStatusDistribution.value || videoStatusDistribution.value.length === 0) {
     // Show no data message
     ctx.fillStyle = '#6c757d';
     ctx.font = '14px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('No ad type data available', width / 2, height / 2);
+    ctx.fillText('No video status data available', width / 2, height / 2);
     return;
   }
-  
+
   const centerX = width / 2;
   const centerY = height / 2;
   const radius = Math.min(width, height) / 3;
-  
+
   let currentAngle = -Math.PI / 2; // Start from top
-  
-  // Store slice data for tooltip
+
+  // Store slice data for tooltip and calculate total
   const slices = [];
-  
-  // General ads slice
-  const generalAngle = (analytics.value.general_plays / total) * 2 * Math.PI;
-  slices.push({
-    startAngle: currentAngle,
-    endAngle: currentAngle + generalAngle,
-    color: '#007bff',
-    label: 'General Ads',
-    value: analytics.value.general_plays,
-    percentage: ((analytics.value.general_plays / total) * 100).toFixed(1)
+  let total = 0;
+
+  // Calculate total
+  videoStatusDistribution.value.forEach(status => {
+    total += status.count;
   });
-  
-  ctx.beginPath();
-  ctx.arc(centerX, centerY, radius, currentAngle, currentAngle + generalAngle);
-  ctx.lineTo(centerX, centerY);
-  ctx.fillStyle = '#007bff';
-  ctx.fill();
-  
-  currentAngle += generalAngle;
-  
-  // Perfume ads slice
-  const perfumeAngle = (analytics.value.perfume_plays / total) * 2 * Math.PI;
-  slices.push({
-    startAngle: currentAngle,
-    endAngle: currentAngle + perfumeAngle,
-    color: '#28a745',
-    label: 'Perfume Ads',
-    value: analytics.value.perfume_plays,
-    percentage: ((analytics.value.perfume_plays / total) * 100).toFixed(1)
+
+  if (total === 0) {
+    ctx.fillStyle = '#6c757d';
+    ctx.font = '14px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('No videos found', width / 2, height / 2);
+    return;
+  }
+
+  // Color mapping for different statuses
+  const statusColors = {
+    'active': '#28a745',     // Green
+    'processing': '#ffc107', // Yellow
+    'inactive': '#dc3545',   // Red
+    'pending': '#17a2b8',    // Cyan
+    'rejected': '#6f42c1',   // Purple
+    'approved': '#28a745'    // Green (same as active)
+  };
+
+  // Create slices for each status
+  videoStatusDistribution.value.forEach((status, index) => {
+    const color = statusColors[status.status.toLowerCase()] || '#6c757d'; // Default gray
+    const angle = (status.count / total) * 2 * Math.PI;
+
+    slices.push({
+      startAngle: currentAngle,
+      endAngle: currentAngle + angle,
+      color: color,
+      label: status.status.charAt(0).toUpperCase() + status.status.slice(1),
+      value: status.count,
+      percentage: ((status.count / total) * 100).toFixed(1)
+    });
+
+    // Draw the slice
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, currentAngle, currentAngle + angle);
+    ctx.lineTo(centerX, centerY);
+    ctx.fillStyle = color;
+    ctx.fill();
+
+    // Add border between slices
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    currentAngle += angle;
   });
-  
-  ctx.beginPath();
-  ctx.arc(centerX, centerY, radius, currentAngle, currentAngle + perfumeAngle);
-  ctx.lineTo(centerX, centerY);
-  ctx.fillStyle = '#28a745';
-  ctx.fill();
-  
+
   // Draw legend
   ctx.font = '12px Arial';
   ctx.textAlign = 'left';
-  
+
   let legendY = 20;
-  
-  // General ads legend
-  ctx.fillStyle = '#007bff';
-  ctx.fillRect(20, legendY, 15, 15);
-  ctx.fillStyle = '#333';
-  ctx.fillText(`General Ads (${slices[0].percentage}%)`, 45, legendY + 12);
-  
-  // Perfume ads legend
-  legendY += 25;
-  ctx.fillStyle = '#28a745';
-  ctx.fillRect(20, legendY, 15, 15);
-  ctx.fillStyle = '#333';
-  ctx.fillText(`Perfume Ads (${slices[1].percentage}%)`, 45, legendY + 12);
-  
+
+  slices.forEach((slice, index) => {
+    ctx.fillStyle = slice.color;
+    ctx.fillRect(20, legendY, 15, 15);
+    ctx.fillStyle = '#333';
+    ctx.fillText(`${slice.label} (${slice.percentage}%)`, 45, legendY + 12);
+    legendY += 25;
+  });
+
   // Add mouse move event for tooltip
   canvas.onmousemove = (e) => {
     const rect = canvas.getBoundingClientRect();
@@ -798,33 +884,33 @@ const renderAdTypeChart = () => {
     const scaleY = canvas.height / rect.height;
     const mouseX = (e.clientX - rect.left) * scaleX;
     const mouseY = (e.clientY - rect.top) * scaleY;
-    
+
     // Calculate distance from center
     const dx = mouseX - centerX;
     const dy = mouseY - centerY;
     const distance = Math.sqrt(dx * dx + dy * dy);
-    
+
     // Check if mouse is within the pie chart (with small buffer for easier hovering)
     if (distance <= radius + 5) {
       // Calculate angle from center
       let angle = Math.atan2(dy, dx);
       // Adjust angle to match our coordinate system
       if (angle < -Math.PI / 2) angle += 2 * Math.PI;
-      
+
       // Find which slice the mouse is over
       for (const slice of slices) {
         if (angle >= slice.startAngle && angle <= slice.endAngle) {
-          showTooltip(e.clientX, e.clientY, slice.label, `${formatNumber(slice.value)} plays (${slice.percentage}%)`, '');
+          showTooltip(e.clientX, e.clientY, slice.label, `${formatNumber(slice.value)} videos (${slice.percentage}%)`, '');
           canvas.style.cursor = 'pointer';
           return;
         }
       }
     }
-    
+
     hideTooltip();
     canvas.style.cursor = 'crosshair';
   };
-  
+
   canvas.onmouseleave = () => {
     hideTooltip();
     canvas.style.cursor = 'crosshair';
@@ -927,6 +1013,10 @@ const getActivityPointClass = (type) => {
     case 'topup': return 'bg-success';
     case 'video_approved': return 'bg-info';
     case 'video_rejected': return 'bg-danger';
+    case 'video_uploaded': return 'bg-info';
+    case 'video_updated': return 'bg-warning';
+    case 'payment_received': return 'bg-success';
+    case 'payment_made': return 'bg-danger';
     default: return 'bg-secondary';
   }
 };
