@@ -43,6 +43,7 @@ const fetchAssignedProducts = async () => {
         spray_amount: mp.spray_amount || 0,
         min_volume: mp.min_volume || 0,
         price_per_spray: mp.price_per_spray || 0,
+        is_active: mp.is_active !== undefined ? mp.is_active : true,
         is_from_server: true
       }));
     }
@@ -99,6 +100,7 @@ const copyFromMachine = async () => {
           min_volume: mp.min_volume || 0,
           price_per_spray: mp.price_per_spray || 0,
           background_color: mp.background_color || '#000000',
+          is_active: mp.is_active !== undefined ? mp.is_active : true,
           is_from_server: false
         });
       });
@@ -156,15 +158,40 @@ const closeDropdown = (e) => {
 
 const addProduct = () => {
   const prodId = Number(selectedProductId.value);
-  if (!prodId || assignedProducts.value.some(p => p.product_id === prodId)) return;
+  if (!prodId) return;
+  
+  // Check if product already exists and is deactivated
+  const existingProduct = assignedProducts.value.find(p => p.product_id === prodId);
+  if (existingProduct) {
+    if (existingProduct.is_active) {
+      $toast.error('Product is already assigned to this device');
+      return;
+    } else {
+      // Reactivate the deactivated product
+      reactivateProduct(prodId);
+      selectedProductId.value = "";
+      return;
+    }
+  }
+  
+  // Find available slot (1-5)
+  const usedSlots = assignedProducts.value.filter(p => p.is_active).map(p => p.slot);
+  const availableSlots = [1, 2, 3, 4, 5].filter(slot => !usedSlots.includes(slot));
+  
+  if (availableSlots.length === 0) {
+    $toast.error('All slots are occupied. Please deactivate a product first.');
+    return;
+  }
+  
   const product = ajaxProductList.value.find(p => p.id === prodId);
   assignedProducts.value.push({
     product_id: prodId,
     product,
-    slot: 1,
+    slot: availableSlots[0], // Assign first available slot
     spray_amount: 0,
     min_volume: 0,
     price_per_spray: 0,
+    is_active: true,
     is_from_server: false
   });
   selectedProductId.value = "";
@@ -174,66 +201,171 @@ const removeProduct = (productId, isFromServer) => {
   if (isFromServer) {
     removeProductFromServer(productId);
   } else {
+    // For local products, just remove them from the array
     assignedProducts.value = assignedProducts.value.filter(p => p.product_id !== productId);
+    $toast.success('Product removed from list.');
+  }
+};
+
+const deleteProduct = async (productId) => {
+  try {
+    const response = await fetchWithAuth(`${apiUrl}/api/device/${deviceId}/products/${productId}`, {
+      method: 'DELETE',
+    });
+    const data = await response.json();
+    if (data.success) {
+      $toast.success('Product removed from device!');
+      fetchAssignedProducts();
+    } else {
+      $toast.error(data.message || 'Failed to remove product from device');
+    }
+  } catch (e) {
+    $toast.error('Failed to remove product from device');
   }
 };
 
 const removeProductFromServer = async (productId) => {
-  Swal.fire({
-    title: 'Are you sure?',
-    text: "You won't be able to revert this!",
-    icon: 'warning',
-    showCancelButton: true,
-    confirmButtonColor: '#3085d6',
-    cancelButtonColor: '#d33',
-    confirmButtonText: 'Yes, delete it!'
-  }).then(async (result) => {
-    if (result.isConfirmed) {
-      try {
-      const response = await fetchWithAuth(`${apiUrl}/api/device/${deviceId}/products/${productId}`, {
-        method: 'DELETE',
+  // First check if product has transactions
+  try {
+    const response = await fetchWithAuth(`${apiUrl}/api/product/${productId}/has-transactions`);
+    const data = await response.json();
+    
+    if (data.success && data.hasTransactions) {
+      // Product has transactions, offer to deactivate instead
+      Swal.fire({
+        title: 'Product has transactions',
+        text: "This product cannot be deleted because it has transactions. Would you like to deactivate it instead?",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#3085d6',
+        cancelButtonColor: '#d33',
+        confirmButtonText: 'Yes, deactivate it!'
+      }).then(async (result) => {
+        if (result.isConfirmed) {
+          await deactivateProduct(productId);
+        }
       });
-      const data = await response.json();
-      if (data.success) {
-        $toast.success('Product removed from device!');
-        fetchAssignedProducts();
-      } else {
-        $toast.error(data.message || 'Failed to remove product from device');
+    } else {
+      // Product has no transactions, can be deleted
+      Swal.fire({
+        title: 'Are you sure?',
+        text: "You won't be able to revert this!",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#3085d6',
+        cancelButtonColor: '#d33',
+        confirmButtonText: 'Yes, delete it!'
+      }).then(async (result) => {
+        if (result.isConfirmed) {
+          await deleteProduct(productId);
+        }
+      });
+    }
+  } catch (e) {
+    // If the API endpoint doesn't exist, default to deactivation
+    Swal.fire({
+      title: 'Deactivate Product',
+      text: "This product will be deactivated instead of deleted to preserve transaction history. You can reactivate it later if needed.",
+      icon: 'info',
+      showCancelButton: true,
+      confirmButtonColor: '#3085d6',
+      cancelButtonColor: '#d33',
+      confirmButtonText: 'Yes, deactivate it!'
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        await deactivateProduct(productId);
       }
-    } catch (e) {
-      $toast.error('Failed to remove product from device');
+    });
+  }
+};
+
+
+const deactivateProduct = async (productId) => {
+  try {
+    const response = await fetchWithAuth(`${apiUrl}/api/device/${deviceId}/products/${productId}/deactivate`, {
+      method: 'PUT',
+    });
+    const data = await response.json();
+    if (data.success) {
+      $toast.success('Product deactivated!');
+      fetchAssignedProducts();
+    } else {
+      $toast.error(data.message || 'Failed to deactivate product');
     }
+  } catch (e) {
+    // If API endpoint doesn't exist, update locally
+    const productIndex = assignedProducts.value.findIndex(p => p.product_id === productId);
+    if (productIndex !== -1) {
+      assignedProducts.value[productIndex].is_active = false;
+      assignedProducts.value[productIndex].is_from_server = false; // Mark as modified
+      $toast.success('Product deactivated! Click Save Configuration to apply changes.');
     }
-  })
-  
+  }
+};
+
+const reactivateProduct = async (productId) => {
+  try {
+    const response = await fetchWithAuth(`${apiUrl}/api/device/${deviceId}/products/${productId}/reactivate`, {
+      method: 'PUT',
+    });
+    const data = await response.json();
+    if (data.success) {
+      $toast.success('Product reactivated!');
+      fetchAssignedProducts();
+    } else {
+      $toast.error(data.message || 'Failed to reactivate product');
+    }
+  } catch (e) {
+    // If API endpoint doesn't exist, update locally
+    const productIndex = assignedProducts.value.findIndex(p => p.product_id === productId);
+    if (productIndex !== -1) {
+      // Check if there's an available slot
+      const usedSlots = assignedProducts.value.filter(p => p.is_active).map(p => p.slot);
+      const availableSlots = [1, 2, 3, 4, 5].filter(slot => !usedSlots.includes(slot));
+      
+      if (availableSlots.length === 0) {
+        $toast.error('All slots are occupied. Please deactivate another product first.');
+        return;
+      }
+      
+      assignedProducts.value[productIndex].is_active = true;
+      assignedProducts.value[productIndex].slot = availableSlots[0]; // Assign first available slot
+      assignedProducts.value[productIndex].is_from_server = false; // Mark as modified
+      $toast.success('Product reactivated! Click Save Configuration to apply changes.');
+    }
+  }
 };
 
 const saveConfig = async () => {
   console.log(assignedProducts.value);
-  if (assignedProducts.value.length !== 5) {
-    $toast.error('You have to assign 5 products to a device');
+  
+  // Count only active products
+  const activeProducts = assignedProducts.value.filter(p => p.is_active);
+  
+  if (activeProducts.length !== 5) {
+    $toast.error('You have to assign exactly 5 active products to a device');
     return;
   } else {
     // Additional validations
-    const slotNumbers = assignedProducts.value.map(p => p.slot);
+    const slotNumbers = activeProducts.map(p => p.slot);
     const hasDuplicateSlot = slotNumbers.some((s, idx) => slotNumbers.indexOf(s) !== idx);
     if (hasDuplicateSlot) {
-      $toast.error('Each product must have a unique slot');
+      $toast.error('Each active product must have a unique slot');
       return;
     }
-    if (assignedProducts.value.some(p => p.slot < 1 || p.slot > 5)) {
+    if (activeProducts.some(p => p.slot < 1 || p.slot > 5)) {
       $toast.error('Slot number must be between 1 and 5');
       return;
     }
-    if (assignedProducts.value.some(p => p.spray_amount < 1)) {
+    if (activeProducts.some(p => p.spray_amount < 1)) {
       $toast.error('Spray amount must be at least 1');
       return;
     }
-    if (assignedProducts.value.some(p => p.min_volume <= 0)) {
+    if (activeProducts.some(p => p.min_volume <= 0)) {
       $toast.error('Minimum volume must be greater than 0');
       return;
     }
-    if (assignedProducts.value.some(p => p.price_per_spray <= 0)) {
+    if (activeProducts.some(p => p.price_per_spray <= 0)) {
       $toast.error('Price per spray must be greater than 0');
       return;
     }
@@ -245,7 +377,8 @@ const saveConfig = async () => {
           spray_amount: p.spray_amount,
           min_volume: p.min_volume,
           price_per_spray: p.price_per_spray,
-          background_color: rgbToHex(p.background_color)
+          background_color: rgbToHex(p.background_color),
+          is_active: p.is_active
         }))
       };
       const response = await fetchWithAuth(`${apiUrl}/api/device/${deviceId}/products`, {
@@ -386,23 +519,43 @@ watch(() => dropdownOpen.value, (open) => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(item, i) in assignedProducts" :key="item.product_id">
+              <tr v-for="(item, i) in assignedProducts" :key="item.product_id" :class="{ 'table-secondary': !item.is_active }">
                 <td>{{ i + 1 }}</td>
                 <td>
-                  <img v-if="item.product && item.product.image_url" :src="item.product.image_url" alt="Product Image" style="height:48px;width:auto;border-radius:6px;box-shadow:0 2px 6px #0001;" />
+                  <img v-if="item.product && item.product.image_url" :src="item.product.image_url" alt="Product Image" style="height:48px;width:auto;border-radius:6px;box-shadow:0 2px 6px #0001;" :style="{ opacity: item.is_active ? 1 : 0.5 }" />
                 </td>
-                <td>{{ item.product ? item.product.name : '' }}</td>
-                <td>{{ item.product && item.product.brand ? item.product.brand.name : '' }}</td>
-                <td><input type="number" style="text-align: center;" v-model.number="item.slot" class="form-control" min="1" step="1" @focus="selectInputContent" @click="selectInputContent" /></td>
-                <td><input type="number" style="text-align: center;" v-model.number="item.spray_amount" class="form-control" min="0" step="1" @focus="selectInputContent" @click="selectInputContent" /></td>
-                <td><input type="number" style="text-align: center;" v-model.number="item.min_volume" class="form-control" min="0" step="1" @focus="selectInputContent" @click="selectInputContent" /></td>
-                <td><input type="number" style="text-align: center;" v-model.number="item.price_per_spray" class="form-control" min="0" step="1" @focus="selectInputContent" @click="selectInputContent" /></td>
                 <td>
-                  <button class="btn btn-danger btn-sm" @click="removeProduct(item.product_id, item.is_from_server)"><i class="fas fa-trash"></i></button>
+                  {{ item.product ? item.product.name : '' }}
+                  <span v-if="!item.is_active" class="badge badge-warning ml-2">Inactive</span>
+                </td>
+                <td>{{ item.product && item.product.brand ? item.product.brand.name : '' }}</td>
+                <td>
+                  <input type="number" style="text-align: center;" v-model.number="item.slot" class="form-control" min="1" max="5" step="1" @focus="selectInputContent" @click="selectInputContent" :disabled="!item.is_active" />
+                </td>
+                <td>
+                  <input type="number" style="text-align: center;" v-model.number="item.spray_amount" class="form-control" min="0" step="1" @focus="selectInputContent" @click="selectInputContent" :disabled="!item.is_active" />
+                </td>
+                <td>
+                  <input type="number" style="text-align: center;" v-model.number="item.min_volume" class="form-control" min="0" step="1" @focus="selectInputContent" @click="selectInputContent" :disabled="!item.is_active" />
+                </td>
+                <td>
+                  <input type="number" style="text-align: center;" v-model.number="item.price_per_spray" class="form-control" min="0" step="1" @focus="selectInputContent" @click="selectInputContent" :disabled="!item.is_active" />
+                </td>
+                <td>
+                  <div v-if="item.is_active" class="btn-group">
+                    <button class="btn btn-danger btn-sm" @click="removeProduct(item.product_id, item.is_from_server)" title="Remove/Deactivate">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </div>
+                  <div v-else class="btn-group">
+                    <button class="btn btn-success btn-sm" @click="reactivateProduct(item.product_id)" title="Reactivate">
+                      <i class="fas fa-check"></i>
+                    </button>
+                  </div>
                 </td>
               </tr>
               <tr v-if="assignedProducts.length === 0">
-                <td colspan="7" class="text-center">No products assigned.</td>
+                <td colspan="8" class="text-center">No products assigned.</td>
               </tr>
             </tbody>
           </table>

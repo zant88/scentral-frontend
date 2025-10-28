@@ -20,9 +20,9 @@
                 title="Add New"><i class="fas fa-plus"></i></a>
             </div>
           </client-only>
-          <div class="right-action">
-            <input type="search" v-model="querySearch" @keyup.enter="getUserList"  class="form-control" placeholder="Type then press enter" />
-          </div>
+            <div class="right-action">
+              <input type="search" v-model="querySearch" @keyup.enter="handleSearch"  class="form-control" placeholder="Type then press enter" />
+            </div>
         </div>
         <div class="card-body">
           <table class="table table-striped">
@@ -40,22 +40,34 @@
             <tbody>
               <tr v-for="(item, i) in userList" :key="item.ID">
                 <td class="checkbox"><input type="checkbox" v-model="checkedItems" :value="item.id" /></td>
-                <td scope="row">{{ i + 1 }}</td>
-                <td><NuxtLink :to="`/user/update/${item.id}`">{{ item.full_name }}</NuxtLink></td>
+                <td scope="row">{{ (currentPage - 1) * perPage + i + 1 }}</td>
+                <td>
+                  <NuxtLink :to="`/user/update/${item.id}`" class="d-block">
+                    {{ getDisplayNameWithLinks(item) }}
+                  </NuxtLink>
+                </td>
                 <td>{{ item.email }}</td>
                 <td>{{ item.phone }}</td>
               </tr>
 
             </tbody>
           </table>
-          <ul class="pagination">
-            <li class="page-item"><a class="page-link" href="#" aria-label="Previous"><span
-                  aria-hidden="true">«</span><span class="sr-only">Previous</span></a></li>
-            <li class="page-item"><a class="page-link" href="#">1</a></li>
-            <li class="page-item"><a class="page-link" href="#">2</a></li>
-            <li class="page-item"><a class="page-link" href="#">3</a></li>
-            <li class="page-item"><a class="page-link" href="#" aria-label="Next"><span aria-hidden="true">»</span>
-                <span class="sr-only">Next</span></a></li>
+          <ul class="pagination" v-if="pagination">
+            <li class="page-item" :class="{ disabled: !pagination.has_prev }">
+              <a class="page-link" href="#" @click.prevent="changePage(pagination.current_page - 1)" aria-label="Previous">
+                <span aria-hidden="true">«</span>
+                <span class="sr-only">Previous</span>
+              </a>
+            </li>
+            <li v-for="page in visiblePages" :key="page" class="page-item" :class="{ active: page === pagination.current_page }">
+              <a class="page-link" href="#" @click.prevent="changePage(page)">{{ page }}</a>
+            </li>
+            <li class="page-item" :class="{ disabled: !pagination.has_next }">
+              <a class="page-link" href="#" @click.prevent="changePage(pagination.current_page + 1)" aria-label="Next">
+                <span aria-hidden="true">»</span>
+                <span class="sr-only">Next</span>
+              </a>
+            </li>
           </ul>
         </div>
       </div>
@@ -140,6 +152,7 @@ const config = useRuntimeConfig();
 const apiUrl = `${config.public.apiBase}`;
 const checkedItems = ref([]);
 const userList = ref([]);
+const pagination = ref(null);
 const isCreateUpdate = ref(false);
 const isEdited = ref(false);
 const isChangePassword = ref(false);
@@ -151,7 +164,41 @@ const userRePassword = ref('');
 const userID = ref(null);
 const $toast = useToast();
 const querySearch = ref('');
+const currentPage = ref(1);
+const perPage = ref(10);
 const anyChecked = computed(() => checkedItems.value.length > 0);
+
+const visiblePages = computed(() => {
+  if (!pagination.value) return [];
+  
+  const current = pagination.value.current_page;
+  const total = pagination.value.total_pages;
+  const delta = 2; // Number of pages to show before and after current page
+  
+  const range = [];
+  const rangeWithDots = [];
+  let l;
+
+  for (let i = 1; i <= total; i++) {
+    if (i === 1 || i === total || (i >= current - delta && i <= current + delta)) {
+      range.push(i);
+    }
+  }
+
+  range.forEach((i) => {
+    if (l) {
+      if (i - l === 2) {
+        rangeWithDots.push(l + 1);
+      } else if (i - l !== 1) {
+        rangeWithDots.push('...');
+      }
+    }
+    rangeWithDots.push(i);
+    l = i;
+  });
+
+  return rangeWithDots;
+});
 const toggleAll = (event) => {
   if (event.target.checked) {
     checkedItems.value = Array.from({ length: 100 }, (_, i) => i + 1);
@@ -196,10 +243,16 @@ const getNewToken = async () => {
 const getUserList = async () => {
   const accessToken = localStorage.getItem('access_token');
   try {
-    let url = `${apiUrl}/api/user/`;
+    const params = new URLSearchParams({
+      page: currentPage.value.toString(),
+      limit: perPage.value.toString(),
+    });
+    
     if (querySearch.value != '') {
-      url = `${apiUrl}/api/user/?q=${querySearch.value}`;
+      params.append('q', querySearch.value);
     }
+    
+    const url = `${apiUrl}/api/user/?${params.toString()}`;
     const response = await fetchWithAuth(url, {
       method: 'GET',
       headers: {
@@ -212,12 +265,27 @@ const getUserList = async () => {
       throw new Error(response.status);
     }
     userList.value = data.data;
+    pagination.value = data.meta.pagination;
   } catch (error) {
     $toast.error('You are not authorized to access this page!', {
       duration: 5000,
       position: 'top-right'
     });
   }
+}
+
+const changePage = (page) => {
+  if (page === '...' || !pagination.value) return;
+  
+  if (page >= 1 && page <= pagination.value.total_pages) {
+    currentPage.value = page;
+    getUserList();
+  }
+}
+
+const handleSearch = () => {
+  currentPage.value = 1; // Reset to first page when searching
+  getUserList();
 }
 
 const getUser = async (id) => {
@@ -325,7 +393,7 @@ const createData = async () => {
         'Authorization': `Bearer ${accessToken}`,
       },
       body: JSON.stringify({
-        name: userName.value,
+        full_name: userName.value,
         email: userEmail.value,
         phone: userPhone.value, 
         password: userPassword.value
@@ -366,7 +434,7 @@ const updateData = async () => {
         'Authorization': `Bearer ${accessToken}`,
       },
       body: JSON.stringify({
-        name: userName.value,
+        full_name: userName.value,
         email: userEmail.value,
         phone: userPhone.value, 
         password: userPassword.value
@@ -437,6 +505,51 @@ function clearForm() {
   userPassword.value = '';
   userRePassword.value = '';
 };
+
+function getDisplayName(item) {
+  // Check if full_name exists and is not empty
+  if (item.full_name && item.full_name.trim() !== '') {
+    return item.full_name;
+  }
+  
+  // Check if username exists and is not empty
+  if (item.username && item.username.trim() !== '') {
+    return item.username;
+  }
+  
+  // Fallback to email if available
+  if (item.email && item.email.trim() !== '') {
+    return item.email;
+  }
+  
+  // Final fallback to phone if available
+  if (item.phone && item.phone.trim() !== '') {
+    return item.phone;
+  }
+  
+  // If nothing is available, show placeholder
+  return 'No Name';
+}
+
+function getDisplayNameWithLinks(item) {
+  // Check if full_name exists and is not empty
+  if (item.full_name && item.full_name.trim() !== '') {
+    return item.full_name;
+  }
+  
+  // If name is blank, use email (display only, not clickable)
+  if (item.email && item.email.trim() !== '') {
+    return item.email;
+  }
+  
+  // If email is also blank, use phone number (display only, not clickable)
+  if (item.phone && item.phone.trim() !== '') {
+    return item.phone;
+  }
+  
+  // If nothing is available, show placeholder
+  return 'No Name';
+}
 
 definePageMeta({
   layout: 'default',

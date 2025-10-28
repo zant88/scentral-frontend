@@ -17,7 +17,8 @@ const productActive = ref(true);
 const brandList = ref([]);
 const categoryList = ref([]);
 const productCategory = ref('');
-const volume = ref('');
+const productVolume = ref(0);
+const productBackgroundColor = ref('#ffffff');
 const imageFile = ref(null);
 const imagePreview = ref('');
 const imageError = ref('');
@@ -97,10 +98,11 @@ const createData = async () => {
     formData.append('category_id', productCategory.value);
     formData.append('sku', productSKU.value);
     formData.append('barcode', productBarcode.value);
-    formData.append('volume', volume.value);
+    formData.append('volume', productVolume.value);
+    formData.append('background_color', productBackgroundColor.value);
     formData.append('description', productDescription.value);
     formData.append('note', productNote.value);
-    formData.append('is_active', productActive.value);
+    formData.append('is_active', productActive.value ? '1' : '0');
     if (imageFile.value) {
       formData.append('image', imageFile.value);
     }
@@ -187,8 +189,12 @@ onMounted(() => {
                       <input type="text" class="form-control" id="productBarcode" v-model="productBarcode">
                     </div>
                     <div class="mb-3">
-                      <label for="volume" class="form-label">Volume</label>
-                      <input type="number" class="form-control" id="volume" v-model="volume">
+                      <label for="productBackgroundColor" class="form-label">Background Color</label>
+                      <input type="color" class="form-control" id="productBackgroundColor" v-model="productBackgroundColor" required>
+                    </div>
+                    <div class="mb-3">
+                      <label for="productVolume" class="form-label">Volume (ml)</label>
+                      <input type="number" class="form-control" id="productVolume" v-model="productVolume">
                     </div>
                     <div class="mb-3">
                       <label for="productDescription" class="form-label">Description</label>

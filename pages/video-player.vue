@@ -747,30 +747,30 @@ const startSlotTimeMonitoring = () => {
     console.log(`Current time: ${currentTime}`);
     
     // Refresh slot times from API every 5 minutes to get updates
-    if (Date.now() - lastSlotRefreshTime > 5 * 60 * 1000) {
-      try {
-        const response = await fetch(`${apiBaseUrl.value}/api/slot/active`)
-        if (response.ok) {
-          const data = await response.json()
-          if (data.success) {
-            const oldStartTime = startTimeSlot.value
-            const oldEndTime = endTimeSlot.value
+    // if (Date.now() - lastSlotRefreshTime > 5 * 60 * 1000) {
+    //   try {
+    //     const response = await fetch(`${apiBaseUrl.value}/api/slot/active`)
+    //     if (response.ok) {
+    //       const data = await response.json()
+    //       if (data.success) {
+    //         const oldStartTime = startTimeSlot.value
+    //         const oldEndTime = endTimeSlot.value
             
-            startTimeSlot.value = data.start_time
-            endTimeSlot.value = data.end_time
+    //         startTimeSlot.value = data.start_time
+    //         endTimeSlot.value = data.end_time
             
-            // Log if slot times have changed
-            if (oldStartTime !== data.start_time || oldEndTime !== data.end_time) {
-              log('info', `Slot times updated: ${oldStartTime}-${oldEndTime} → ${data.start_time}-${data.end_time}`)
-            }
+    //         // Log if slot times have changed
+    //         if (oldStartTime !== data.start_time || oldEndTime !== data.end_time) {
+    //           log('info', `Slot times updated: ${oldStartTime}-${oldEndTime} → ${data.start_time}-${data.end_time}`)
+    //         }
             
-            lastSlotRefreshTime = Date.now()
-          }
-        }
-      } catch (error) {
-        log('warn', `Failed to refresh slot times: ${error.message}`)
-      }
-    }
+    //         lastSlotRefreshTime = Date.now()
+    //       }
+    //     }
+    //   } catch (error) {
+    //     log('warn', `Failed to refresh slot times: ${error.message}`)
+    //   }
+    // }
     
     const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
     console.log(`Slot range: ${startTimeSlot.value} - ${endTimeSlot.value}, In range: ${isInSlotRange}`);

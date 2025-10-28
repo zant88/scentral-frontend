@@ -408,10 +408,10 @@ onMounted(() => {
   border: 1px solid rgba(0, 0, 0, 0.125);
 }
 
-.card-header {
+/* .card-header {
   background-color: #f8f9fa;
   border-bottom: 1px solid rgba(0, 0, 0, 0.125);
-}
+} */
 
 .btn-primary {
   background-color: #6777ef;

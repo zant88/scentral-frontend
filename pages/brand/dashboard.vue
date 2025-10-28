@@ -40,7 +40,7 @@
                 <h4>Total Spend</h4>
               </div>
               <div class="card-body">
-                {{ formatCurrency(analytics.total_spend) }}
+                {{ formatNumber(analytics.total_spend) }}
               </div>
             </div>
           </div>
@@ -70,7 +70,7 @@
                 <h4>Current Balance</h4>
               </div>
               <div class="card-body">
-                {{ formatCurrency(brandInfo.balance) }}
+                {{ formatNumber(brandInfo.balance) }}
               </div>
             </div>
           </div>
@@ -82,27 +82,33 @@
         <i class="fas fa-exclamation-triangle mr-2"></i>
         <strong>Low Balance Alert:</strong> Your current balance is {{ formatCurrency(brandInfo.balance) }}. 
         Please top up your balance to ensure your advertisements continue running.
-        <button @click="showTopUpModal" class="btn btn-sm btn-warning ml-2">
+        <button @click="navigateTo('/brand/balance')" class="btn btn-sm btn-warning ml-2">
           <i class="fas fa-plus mr-1"></i>Top Up Now
         </button>
       </div>
 
-      <!-- Performance Charts -->
+      <!-- Spend Balance Charts -->
       <div class="row">
         <div class="col-md-8">
           <div class="card">
             <div class="card-header">
-              <h4>Performance Overview</h4>
+              <h4>Spend Balance Overview</h4>
               <div class="card-header-action">
-                <select v-model="selectedPeriod" @change="updateAnalytics" class="form-control form-control-sm">
-                  <option value="7d">Last 7 Days</option>
-                  <option value="30d">Last 30 Days</option>
-                  <option value="90d">Last 90 Days</option>
+                <select v-model="selectedBalancePeriod" @change="updateBalanceChart" class="form-control form-control-sm">
+                  <option value="last_7_days">Last 7 Days</option>
+                  <option value="last_30_days">Last 30 Days</option>
+                  <option value="last_90_days">Last 90 Days</option>
                 </select>
               </div>
             </div>
             <div class="card-body">
-              <canvas id="performanceChart" width="400" height="200"></canvas>
+              <div class="chart-container">
+                <canvas id="balanceChart"></canvas>
+              </div>
+              <div class="mt-3 text-center">
+                <small class="text-muted">Total Spend in Selected Period: </small>
+                <strong class="text-primary">{{ formatCurrency(currentPeriodSpend) }}</strong>
+              </div>
             </div>
           </div>
         </div>
@@ -112,7 +118,9 @@
               <h4>Ad Type Performance</h4>
             </div>
             <div class="card-body">
-              <canvas id="adTypeChart" width="400" height="200"></canvas>
+              <div class="chart-container">
+                <canvas id="adTypeChart"></canvas>
+              </div>
             </div>
           </div>
         </div>
@@ -122,6 +130,11 @@
       <div class="card">
         <div class="card-header">
           <h4>Your Video Performance</h4>
+          <div class="card-header-action">
+            <button @click="navigateTo('/brand/videos')" class="btn btn-sm btn-primary">
+              <i class="fas fa-video mr-1"></i>View All Videos
+            </button>
+          </div>
         </div>
         <div class="card-body">
           <table class="table table-striped">
@@ -133,15 +146,23 @@
                 <th>Total Plays</th>
                 <th>Total Spend</th>
                 <th>Avg. Cost/Play</th>
-                <th>Performance</th>
+                <!-- <th>Performance</th> -->
               </tr>
             </thead>
             <tbody>
               <tr v-for="video in videoAnalytics" :key="video.id">
                 <td>
-                  <div class="video-info">
-                    <strong>{{ video.title }}</strong>
-                    <div class="text-muted small">{{ formatDuration(video.duration_seconds) }}</div>
+                  <div class="video-info d-flex align-items-center">
+                    <img
+                      :src="video.thumbnail_url || '/assets/img/no-image.jpg'"
+                      :alt="video.title"
+                      class="video-thumbnail-small mr-3"
+                      style="width: 60px; height: 45px; object-fit: cover; border-radius: 4px;"
+                    />
+                    <div>
+                      <strong>{{ video.title }}</strong>
+                      <div class="text-muted small">{{ formatDuration(video.duration_seconds) }}</div>
+                    </div>
                   </div>
                 </td>
                 <td>
@@ -154,10 +175,10 @@
                     {{ video.status?.toUpperCase() }}
                   </span>
                 </td>
-                <td>{{ formatNumber(video.total_plays) }}</td>
-                <td>{{ formatCurrency(video.total_spend) }}</td>
-                <td>{{ video.total_plays > 0 ? formatCurrency(video.total_spend / video.total_plays) : 'N/A' }}</td>
-                <td>
+                <td>{{ formatNumber(video.plays) }}</td>
+                <td>{{ formatNumber(video.total_cost) }}</td>
+                <td>{{ video.plays > 0 ? formatNumber(video.total_cost / video.plays) : 'N/A' }}</td>
+                <!-- <td>
                   <div class="performance-indicator">
                     <div class="progress" style="height: 20px;">
                       <div 
@@ -169,7 +190,7 @@
                       </div>
                     </div>
                   </div>
-                </td>
+                </td> -->
               </tr>
             </tbody>
           </table>
@@ -183,6 +204,11 @@
       <div class="card">
         <div class="card-header">
           <h4>Recent Activity</h4>
+          <div class="card-header-action">
+            <button @click="navigateTo('/brand/reports')" class="btn btn-sm btn-primary">
+              <i class="fas fa-chart-bar mr-1"></i>View Detailed Reports
+            </button>
+          </div>
         </div>
         <div class="card-body">
           <div class="timeline">
@@ -201,57 +227,71 @@
         </div>
       </div>
 
-      <!-- Top Up Modal -->
-      <div v-if="isTopUpModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeTopUpModal">
-        <div class="modal-dialog modal-dialog-centered">
-          <div class="modal-content">
-            <div class="modal-header">
-              <h5 class="modal-title">Top Up Balance</h5>
-              <button type="button" class="btn-close" @click="closeTopUpModal"></button>
+      <!-- Quick Actions -->
+      <div class="row">
+        <div class="col-md-3">
+          <div class="card">
+            <div class="card-body text-center">
+              <i class="fas fa-video fa-3x text-primary mb-3"></i>
+              <h5>My Videos</h5>
+              <p class="text-muted">View your advertisement videos</p>
+              <button @click="navigateTo('/brand/videos')" class="btn btn-primary">
+                View Videos
+              </button>
             </div>
-            <div class="modal-body">
-              <div class="text-center mb-4">
-                <h4>Current Balance</h4>
-                <h2 class="text-primary">{{ formatCurrency(brandInfo.balance) }}</h2>
-              </div>
-              <form @submit.prevent="submitTopUp">
-                <div class="form-group">
-                  <label>Top Up Amount</label>
-                  <div class="input-group">
-                    <span class="input-group-text">Rp</span>
-                    <input 
-                      type="text" 
-                      v-model="topUpAmountFormatted" 
-                      @input="handleAmountInput"
-                      class="form-control" 
-                      placeholder="Enter amount" 
-                      required 
-                    />
-                  </div>
-                </div>
-                <div class="form-group">
-                  <label>Payment Method</label>
-                  <select v-model="paymentMethod" class="form-control">
-                    <option value="bank_transfer">Bank Transfer</option>
-                    <option value="credit_card">Credit Card</option>
-                    <option value="ewallet">E-Wallet</option>
-                  </select>
-                </div>
-                <div v-if="topUpAmount" class="alert alert-info">
-                  <i class="fas fa-info-circle mr-2"></i>
-                  New balance after top-up: <strong>{{ formatCurrency(brandInfo.balance + parseFloat(topUpAmount || 0)) }}</strong>
-                </div>
-                <div class="modal-footer">
-                  <button type="button" class="btn btn-secondary" @click="closeTopUpModal">Cancel</button>
-                  <button type="submit" class="btn btn-primary">Top Up Balance</button>
-                </div>
-              </form>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card">
+            <div class="card-body text-center">
+              <i class="fas fa-clock fa-3x text-warning mb-3"></i>
+              <h5>Slot Booking</h5>
+              <p class="text-muted">View your booked slots</p>
+              <button @click="navigateTo('/brand/slots')" class="btn btn-warning">
+                View Slots
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card">
+            <div class="card-body text-center">
+              <i class="fas fa-wallet fa-3x text-success mb-3"></i>
+              <h5>Balance</h5>
+              <p class="text-muted">Manage your account balance</p>
+              <button @click="navigateTo('/brand/balance')" class="btn btn-success">
+                Manage Balance
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card">
+            <div class="card-body text-center">
+              <i class="fas fa-chart-bar fa-3x text-info mb-3"></i>
+              <h5>Reports</h5>
+              <p class="text-muted">View performance reports</p>
+              <button @click="navigateTo('/brand/reports')" class="btn btn-info">
+                View Reports
+              </button>
             </div>
           </div>
         </div>
       </div>
     </div>
   </section>
+  
+  <!-- Tooltip -->
+  <div v-if="tooltip.visible" class="tooltip" :style="{
+    left: tooltip.x + 'px',
+    top: tooltip.y + 'px',
+    opacity: tooltip.visible ? '1' : '0',
+    transition: 'opacity 0.2s ease-in-out'
+  }">
+    <div class="tooltip-title">{{ tooltip.title }}</div>
+    <div class="tooltip-value">{{ tooltip.value }}</div>
+    <div v-if="tooltip.date" class="tooltip-date">{{ tooltip.date }}</div>
+  </div>
 </template>
 
 <script setup>
@@ -259,11 +299,13 @@ definePageMeta({
   middleware: 'brand'
 })
 
-import { ref, onMounted, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, nextTick } from 'vue';
+import { useRouter } from 'vue-router';
 import { fetchWithAuth } from '~/utils/auth.js';
 import { useToast } from 'vue-toast-notification';
 import 'vue-toast-notification/dist/theme-sugar.css';
 
+const router = useRouter();
 const config = useRuntimeConfig();
 const apiUrl = `${config.public.apiBase}`;
 const $toast = useToast();
@@ -288,11 +330,32 @@ const videoAnalytics = ref([]);
 const recentActivities = ref([]);
 const selectedPeriod = ref('30d');
 
-// Top-up modal
-const isTopUpModal = ref(false);
-const topUpAmount = ref('');
-const topUpAmountFormatted = ref('');
-const paymentMethod = ref('bank_transfer');
+// Tooltip state
+const tooltip = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  title: '',
+  value: '',
+  date: ''
+});
+
+// Spend balance data
+const balanceData = ref({
+  current_balance: 0,
+  periods: {
+    last_7_days: { spend_data: [], balance_data: [], total_spend: 0 },
+    last_30_days: { spend_data: [], balance_data: [], total_spend: 0 },
+    last_90_days: { spend_data: [], balance_data: [], total_spend: 0 }
+  }
+});
+const selectedBalancePeriod = ref('last_7_days');
+const currentPeriodSpend = ref(0);
+
+// Navigation function
+const navigateTo = (path) => {
+  router.push(path);
+};
 
 // Fetch brand information
 const fetchBrandInfo = async () => {
@@ -358,6 +421,42 @@ const fetchRecentActivities = async () => {
   }
 };
 
+// Fetch spend balance analytics
+const fetchSpendBalanceAnalytics = async () => {
+  try {
+    const accessToken = localStorage.getItem('access_token');
+    const response = await fetchWithAuth(`${apiUrl}/api/analytics/spend-balance`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    const data = await response.json();
+    if (data.success) {
+      balanceData.value = data.data;
+      updateCurrentPeriodSpend();
+    }
+  } catch (error) {
+    console.error('Error fetching spend balance analytics:', error);
+  }
+};
+
+// Update current period spend
+const updateCurrentPeriodSpend = () => {
+  if (balanceData.value.periods && balanceData.value.periods[selectedBalancePeriod.value]) {
+    currentPeriodSpend.value = balanceData.value.periods[selectedBalancePeriod.value].total_spend;
+  }
+};
+
+// Update balance chart when period changes
+const updateBalanceChart = async () => {
+  updateCurrentPeriodSpend();
+  await nextTick();
+  renderBalanceChart();
+};
+
+// Handle window resize
+const handleResize = () => {
+  renderCharts();
+};
+
 // Update all analytics
 const updateAnalytics = async () => {
   await fetchAnalytics();
@@ -368,66 +467,289 @@ const updateAnalytics = async () => {
 
 // Render charts
 const renderCharts = () => {
-  renderPerformanceChart();
+  renderBalanceChart();
   renderAdTypeChart();
 };
 
-const renderPerformanceChart = () => {
-  const canvas = document.getElementById('performanceChart');
+const renderBalanceChart = () => {
+  const canvas = document.getElementById('balanceChart');
   if (!canvas) return;
   
+  const container = canvas.parentElement;
+  const width = container.offsetWidth;
+  const height = 300;
+  
+  // Set canvas dimensions
+  canvas.width = width;
+  canvas.height = height;
+  canvas.style.width = '100%';
+  canvas.style.height = height + 'px';
+  
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
   
-  // Simple line chart implementation
-  ctx.strokeStyle = '#6777ef';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
+  // Clear canvas
+  ctx.clearRect(0, 0, width, height);
   
-  // Sample data - in real implementation, fetch from API
-  const data = [
-    { day: 'Mon', plays: 45 },
-    { day: 'Tue', plays: 52 },
-    { day: 'Wed', plays: 38 },
-    { day: 'Thu', plays: 65 },
-    { day: 'Fri', plays: 48 },
-    { day: 'Sat', plays: 72 },
-    { day: 'Sun', plays: 58 }
-  ];
+  // Get balance data for selected period
+  const periodData = balanceData.value.periods[selectedBalancePeriod.value];
+  if (!periodData || !periodData.balance_data || periodData.balance_data.length === 0) {
+    // Show no data message
+    ctx.fillStyle = '#6c757d';
+    ctx.font = '14px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('No balance data available for selected period', width / 2, height / 2);
+    return;
+  }
   
-  const maxPlays = Math.max(...data.map(d => d.plays));
+  const balanceDataArray = periodData.balance_data;
+  const spendDataArray = periodData.spend_data;
   
-  data.forEach((point, index) => {
-    const x = (index / (data.length - 1)) * canvas.width;
-    const y = canvas.height - (point.plays / maxPlays) * canvas.height * 0.8;
+  // Find min and max values for scaling
+  const allBalances = balanceDataArray.map(d => d.balance);
+  const allSpends = spendDataArray.map(d => d.spend);
+  const maxBalance = Math.max(...allBalances, 1);
+  const maxSpend = Math.max(...allSpends, 1);
+  const maxValue = Math.max(maxBalance, maxSpend);
+  
+  // Draw grid lines
+  ctx.strokeStyle = '#e9ecef';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([5, 5]);
+  
+  // Horizontal grid lines
+  for (let i = 0; i <= 5; i++) {
+    const y = (height - 40) * (i / 5) + 20;
+    ctx.beginPath();
+    ctx.moveTo(40, y);
+    ctx.lineTo(width - 20, y);
+    ctx.stroke();
     
-    if (index === 0) {
-      ctx.moveTo(x, y);
-    } else {
-      ctx.lineTo(x, y);
-    }
-  });
+    // Y-axis labels
+    ctx.fillStyle = '#6c757d';
+    ctx.font = '10px Arial';
+    ctx.textAlign = 'right';
+    const value = maxValue * (1 - i / 5);
+    ctx.fillText(formatCurrency(value), 35, y + 3);
+  }
   
-  ctx.stroke();
+  ctx.setLineDash([]);
+  
+  // Store point positions for tooltip
+  const balancePoints = [];
+  const spendPoints = [];
+  
+  // Draw balance line
+  if (balanceDataArray.length > 0) {
+    ctx.strokeStyle = '#007bff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    
+    balanceDataArray.forEach((point, index) => {
+      const x = 40 + ((width - 60) / (balanceDataArray.length - 1)) * index;
+      const y = height - 20 - ((point.balance - 0) / maxValue) * (height - 40);
+      
+      // Store point position for tooltip
+      balancePoints.push({ x, y, data: point });
+      
+      if (index === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    });
+    
+    ctx.stroke();
+    
+    // Draw balance points with larger hover area
+    ctx.fillStyle = '#007bff';
+    balanceDataArray.forEach((point, index) => {
+      const x = 40 + ((width - 60) / (balanceDataArray.length - 1)) * index;
+      const y = height - 20 - ((point.balance - 0) / maxValue) * (height - 40);
+      
+      // Draw outer circle for hover area (invisible but larger)
+      ctx.beginPath();
+      ctx.arc(x, y, 8, 0, 2 * Math.PI);
+      ctx.fillStyle = 'rgba(0, 123, 255, 0.1)';
+      ctx.fill();
+      
+      // Draw actual point
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, 2 * Math.PI);
+      ctx.fillStyle = '#007bff';
+      ctx.fill();
+    });
+  }
+  
+  // Draw spend line
+  if (spendDataArray.length > 0) {
+    ctx.strokeStyle = '#dc3545';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    
+    spendDataArray.forEach((point, index) => {
+      const x = 40 + ((width - 60) / (spendDataArray.length - 1)) * index;
+      const y = height - 20 - ((point.spend - 0) / maxValue) * (height - 40);
+      
+      // Store point position for tooltip
+      spendPoints.push({ x, y, data: point });
+      
+      if (index === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    });
+    
+    ctx.stroke();
+    
+    // Draw spend points with larger hover area
+    ctx.fillStyle = '#dc3545';
+    spendDataArray.forEach((point, index) => {
+      const x = 40 + ((width - 60) / (spendDataArray.length - 1)) * index;
+      const y = height - 20 - ((point.spend - 0) / maxValue) * (height - 40);
+      
+      // Draw outer circle for hover area (invisible but larger)
+      ctx.beginPath();
+      ctx.arc(x, y, 8, 0, 2 * Math.PI);
+      ctx.fillStyle = 'rgba(220, 53, 69, 0.1)';
+      ctx.fill();
+      
+      // Draw actual point
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, 2 * Math.PI);
+      ctx.fillStyle = '#dc3545';
+      ctx.fill();
+    });
+  }
+  
+  // Draw X-axis labels (dates)
+  ctx.fillStyle = '#6c757d';
+  ctx.font = '9px Arial';
+  ctx.textAlign = 'center';
+  
+  const labelCount = Math.min(balanceDataArray.length, 10); // Show max 10 labels
+  const step = Math.max(1, Math.floor(balanceDataArray.length / labelCount));
+  
+  for (let i = 0; i < balanceDataArray.length; i += step) {
+    const x = 40 + ((width - 60) / (balanceDataArray.length - 1)) * i;
+    const date = new Date(balanceDataArray[i].date);
+    const label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    ctx.fillText(label, x, height - 5);
+  }
+  
+  // Draw legend
+  ctx.font = '12px Arial';
+  ctx.textAlign = 'left';
+  
+  // Balance legend
+  ctx.fillStyle = '#007bff';
+  ctx.fillRect(width - 150, 10, 15, 3);
+  ctx.fillStyle = '#333';
+  ctx.fillText('Balance', width - 130, 14);
+  
+  // Spend legend
+  ctx.fillStyle = '#dc3545';
+  ctx.fillRect(width - 150, 25, 15, 3);
+  ctx.fillStyle = '#333';
+  ctx.fillText('Daily Spend', width - 130, 29);
+  
+  // Add mouse move event for tooltip
+  canvas.onmousemove = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const mouseX = (e.clientX - rect.left) * scaleX;
+    const mouseY = (e.clientY - rect.top) * scaleY;
+    
+    // Check if mouse is near any balance point
+    let foundPoint = false;
+    
+    // Check balance points
+    for (const point of balancePoints) {
+      const distance = Math.sqrt(Math.pow(mouseX - point.x, 2) + Math.pow(mouseY - point.y, 2));
+      if (distance <= 15) { // Increased hover area for better UX
+        showTooltip(e.clientX, e.clientY, 'Balance', formatCurrency(point.data.balance), point.data.date);
+        foundPoint = true;
+        canvas.style.cursor = 'pointer';
+        break;
+      }
+    }
+    
+    // Check spend points if no balance point found
+    if (!foundPoint) {
+      for (const point of spendPoints) {
+        const distance = Math.sqrt(Math.pow(mouseX - point.x, 2) + Math.pow(mouseY - point.y, 2));
+        if (distance <= 15) { // Increased hover area for better UX
+          showTooltip(e.clientX, e.clientY, 'Daily Spend', formatCurrency(point.data.spend), point.data.date);
+          foundPoint = true;
+          canvas.style.cursor = 'pointer';
+          break;
+        }
+      }
+    }
+    
+    if (!foundPoint) {
+      hideTooltip();
+      canvas.style.cursor = 'crosshair';
+    }
+  };
+  
+  canvas.onmouseleave = () => {
+    hideTooltip();
+    canvas.style.cursor = 'crosshair';
+  };
 };
 
 const renderAdTypeChart = () => {
   const canvas = document.getElementById('adTypeChart');
   if (!canvas) return;
   
+  const container = canvas.parentElement;
+  const width = container.offsetWidth;
+  const height = 300;
+  
+  // Set canvas dimensions
+  canvas.width = width;
+  canvas.height = height;
+  canvas.style.width = '100%';
+  canvas.style.height = height + 'px';
+  
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0, 0, width, height);
   
   const total = analytics.value.general_plays + analytics.value.perfume_plays;
-  if (total === 0) return;
+  if (total === 0) {
+    // Show no data message
+    ctx.fillStyle = '#6c757d';
+    ctx.font = '14px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('No ad type data available', width / 2, height / 2);
+    return;
+  }
   
-  let currentAngle = 0;
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const radius = Math.min(width, height) / 3;
+  
+  let currentAngle = -Math.PI / 2; // Start from top
+  
+  // Store slice data for tooltip
+  const slices = [];
   
   // General ads slice
   const generalAngle = (analytics.value.general_plays / total) * 2 * Math.PI;
+  slices.push({
+    startAngle: currentAngle,
+    endAngle: currentAngle + generalAngle,
+    color: '#007bff',
+    label: 'General Ads',
+    value: analytics.value.general_plays,
+    percentage: ((analytics.value.general_plays / total) * 100).toFixed(1)
+  });
+  
   ctx.beginPath();
-  ctx.arc(canvas.width / 2, canvas.height / 2, Math.min(canvas.width, canvas.height) / 3, currentAngle, currentAngle + generalAngle);
-  ctx.lineTo(canvas.width / 2, canvas.height / 2);
+  ctx.arc(centerX, centerY, radius, currentAngle, currentAngle + generalAngle);
+  ctx.lineTo(centerX, centerY);
   ctx.fillStyle = '#007bff';
   ctx.fill();
   
@@ -435,70 +757,121 @@ const renderAdTypeChart = () => {
   
   // Perfume ads slice
   const perfumeAngle = (analytics.value.perfume_plays / total) * 2 * Math.PI;
+  slices.push({
+    startAngle: currentAngle,
+    endAngle: currentAngle + perfumeAngle,
+    color: '#28a745',
+    label: 'Perfume Ads',
+    value: analytics.value.perfume_plays,
+    percentage: ((analytics.value.perfume_plays / total) * 100).toFixed(1)
+  });
+  
   ctx.beginPath();
-  ctx.arc(canvas.width / 2, canvas.height / 2, Math.min(canvas.width, canvas.height) / 3, currentAngle, currentAngle + perfumeAngle);
-  ctx.lineTo(canvas.width / 2, canvas.height / 2);
+  ctx.arc(centerX, centerY, radius, currentAngle, currentAngle + perfumeAngle);
+  ctx.lineTo(centerX, centerY);
   ctx.fillStyle = '#28a745';
   ctx.fill();
-};
-
-// Top-up functions
-const showTopUpModal = () => {
-  isTopUpModal.value = true;
-  topUpAmount.value = '';
-  topUpAmountFormatted.value = '';
-  paymentMethod.value = 'bank_transfer';
-};
-
-const closeTopUpModal = () => {
-  isTopUpModal.value = false;
-  topUpAmount.value = '';
-  topUpAmountFormatted.value = '';
-  paymentMethod.value = 'bank_transfer';
-};
-
-const handleAmountInput = (event) => {
-  const value = event.target.value.replace(/[^0-9]/g, '');
-  topUpAmount.value = value;
-  topUpAmountFormatted.value = value ? parseInt(value).toLocaleString('id-ID') : '';
-};
-
-const submitTopUp = async () => {
-  if (!topUpAmount.value || parseFloat(topUpAmount.value) <= 0) {
-    $toast.error('Please enter a valid amount', { duration: 5000, position: 'top-right' });
-    return;
-  }
-
-  try {
-    const accessToken = localStorage.getItem('access_token');
-    const response = await fetchWithAuth(`${apiUrl}/api/balance/topup`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({
-        amount: parseFloat(topUpAmount.value),
-        payment_method: paymentMethod.value
-      })
-    });
+  
+  // Draw legend
+  ctx.font = '12px Arial';
+  ctx.textAlign = 'left';
+  
+  let legendY = 20;
+  
+  // General ads legend
+  ctx.fillStyle = '#007bff';
+  ctx.fillRect(20, legendY, 15, 15);
+  ctx.fillStyle = '#333';
+  ctx.fillText(`General Ads (${slices[0].percentage}%)`, 45, legendY + 12);
+  
+  // Perfume ads legend
+  legendY += 25;
+  ctx.fillStyle = '#28a745';
+  ctx.fillRect(20, legendY, 15, 15);
+  ctx.fillStyle = '#333';
+  ctx.fillText(`Perfume Ads (${slices[1].percentage}%)`, 45, legendY + 12);
+  
+  // Add mouse move event for tooltip
+  canvas.onmousemove = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const mouseX = (e.clientX - rect.left) * scaleX;
+    const mouseY = (e.clientY - rect.top) * scaleY;
     
-    const data = await response.json();
-    if (data.success) {
-      $toast.success('Top-up request submitted successfully!', { duration: 5000, position: 'top-right' });
-      closeTopUpModal();
-      await fetchBrandInfo();
-    } else {
-      $toast.error(data.message || 'Failed to submit top-up request', { duration: 5000, position: 'top-right' });
+    // Calculate distance from center
+    const dx = mouseX - centerX;
+    const dy = mouseY - centerY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // Check if mouse is within the pie chart (with small buffer for easier hovering)
+    if (distance <= radius + 5) {
+      // Calculate angle from center
+      let angle = Math.atan2(dy, dx);
+      // Adjust angle to match our coordinate system
+      if (angle < -Math.PI / 2) angle += 2 * Math.PI;
+      
+      // Find which slice the mouse is over
+      for (const slice of slices) {
+        if (angle >= slice.startAngle && angle <= slice.endAngle) {
+          showTooltip(e.clientX, e.clientY, slice.label, `${formatNumber(slice.value)} plays (${slice.percentage}%)`, '');
+          canvas.style.cursor = 'pointer';
+          return;
+        }
+      }
     }
-  } catch (error) {
-    $toast.error('Failed to submit top-up request', { duration: 5000, position: 'top-right' });
+    
+    hideTooltip();
+    canvas.style.cursor = 'crosshair';
+  };
+  
+  canvas.onmouseleave = () => {
+    hideTooltip();
+    canvas.style.cursor = 'crosshair';
+  };
+};
+
+// Tooltip functions
+const showTooltip = (x, y, title, value, date) => {
+  // Ensure tooltip stays within viewport
+  const tooltipWidth = 250;
+  const tooltipHeight = 80;
+  const padding = 10;
+  
+  let adjustedX = x + padding;
+  let adjustedY = y - tooltipHeight - padding;
+  
+  // Adjust if tooltip would go off the right edge
+  if (adjustedX + tooltipWidth > window.innerWidth) {
+    adjustedX = x - tooltipWidth - padding;
   }
+  
+  // Adjust if tooltip would go off the top edge
+  if (adjustedY < 0) {
+    adjustedY = y + padding;
+  }
+  
+  tooltip.value = {
+    visible: true,
+    x: adjustedX,
+    y: adjustedY,
+    title: title,
+    value: value,
+    date: date ? new Date(date).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    }) : ''
+  };
+};
+
+const hideTooltip = () => {
+  tooltip.value.visible = false;
 };
 
 // Utility functions
 const formatNumber = (num) => {
-  return new Intl.NumberFormat().format(num || 0);
+  return (num || 0).toLocaleString('id-ID');
 };
 
 const formatCurrency = (amount) => {
@@ -564,8 +937,17 @@ onMounted(async () => {
   await fetchAnalytics();
   await fetchVideoAnalytics();
   await fetchRecentActivities();
+  await fetchSpendBalanceAnalytics();
   await nextTick();
   renderCharts();
+  
+  // Add window resize listener
+  window.addEventListener('resize', handleResize);
+});
+
+onUnmounted(() => {
+  // Remove window resize listener
+  window.removeEventListener('resize', handleResize);
 });
 </script>
 
@@ -588,10 +970,13 @@ onMounted(async () => {
   color: #fff;
   font-size: 2rem;
   border-radius: 0 0 0 100%;
+  margin: 0;
 }
 
 .card-statistic-1 .card-wrap {
-  padding: 1.5rem 1.5rem 1.5rem 7rem;
+  padding: 1.5rem 1.5rem 1.5rem 1.8rem;
+  height: 130px;
+  padding-top: 55px;
 }
 
 .card-statistic-1 .card-header h4 {
@@ -605,6 +990,12 @@ onMounted(async () => {
   font-size: 1.5rem;
   font-weight: bold;
   margin: 0;
+  padding-left: 0;
+}
+
+.card-statistic-1 .card-header {
+  padding-top: 0;
+  padding-left: 0
 }
 
 .video-info {
@@ -686,6 +1077,57 @@ onMounted(async () => {
 .bg-info { background-color: #17a2b8; }
 .bg-secondary { background-color: #6c757d; }
 
+.chart-container {
+  width: 100%;
+  position: relative;
+}
+
+canvas {
+  background-color: transparent;
+  padding: 10px 15px;
+  border-radius: 5px;
+  width: 100% !important;
+  max-width: 100%;
+  height: auto;
+  cursor: crosshair;
+}
+
+.tooltip {
+  position: fixed;
+  background-color: rgba(0, 0, 0, 0.9);
+  color: white;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 9999;
+  max-width: 250px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(4px);
+}
+
+.tooltip-title {
+  font-weight: bold;
+  margin-bottom: 6px;
+  color: #fff;
+  font-size: 13px;
+}
+
+.tooltip-value {
+  font-size: 14px;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.tooltip-date {
+  font-size: 11px;
+  opacity: 0.9;
+  margin-top: 4px;
+  color: #ccc;
+}
+
+
 .modal {
   z-index: 1050;
 }
@@ -703,7 +1145,4 @@ onMounted(async () => {
   opacity: 0.75;
 }
 
-canvas {
-  max-height: 300px;
-}
 </style>

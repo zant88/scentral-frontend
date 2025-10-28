@@ -10,7 +10,7 @@
         </ul>
       </form>
       <ul class="navbar-nav navbar-right">
-        <li class="dropdown dropdown-list-toggle"><a href="#" data-toggle="dropdown"
+        <li v-if="!isBrand" class="dropdown dropdown-list-toggle"><a href="#" data-toggle="dropdown"
             :class="['nav-link notification-toggle nav-link-lg', unreadCount > 0 ? 'beep' : '']"><i class="far fa-bell"></i></a>
           <div class="dropdown-menu dropdown-list dropdown-menu-right">
             <div class="dropdown-header">Notifications
@@ -163,12 +163,6 @@
               <a href="javascript:void(0)" @click="navigateTo('/brand/videos')" class="nav-link">
                 <i class="fas fa-video"></i>
                 <span>My Videos</span>
-              </a>
-            </li>
-            <li class="nav-item" :class="isActive('/brand/upload')">
-              <a href="javascript:void(0)" @click="navigateTo('/brand/upload')" class="nav-link">
-                <i class="fas fa-upload"></i>
-                <span>Upload Video</span>
               </a>
             </li>
             <li class="nav-item" :class="isActive('/brand/slots')">

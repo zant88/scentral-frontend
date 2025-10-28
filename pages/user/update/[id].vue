@@ -40,13 +40,15 @@
               <div v-if="isChangePassword" class="col-md-6">
                 <div class="mb-3">
                   <label for="userPassword" class="form-label">Password</label>
-                  <input type="password" class="form-control" id="userPassword" tabindex="4" v-model="userPassword" required>
+                  <input type="password" class="form-control" id="userPassword" tabindex="4" v-model="userPassword" :required="isChangePassword">
+                  <div class="invalid-feedback">Please enter a password!</div>
                 </div>
               </div>
               <div v-if="isChangePassword" class="col-md-6">
                 <div class="mb-3">
                   <label for="userRePassword" class="form-label">Re-Password</label>
-                  <input type="password" class="form-control" id="userRePassword" tabindex="5" v-model="userRePassword" required>
+                  <input type="password" class="form-control" id="userRePassword" tabindex="5" v-model="userRePassword" :required="isChangePassword">
+                  <div class="invalid-feedback">Please confirm your password!</div>
                 </div>
               </div>
             </div>
@@ -106,9 +108,9 @@ const fetchUser = async () => {
     if (!response.ok) {
       throw new Error(data.meta?.message || 'Failed to fetch user');
     }
-    userName.value = data.data.user.full_name;
-    userEmail.value = data.data.user.email;
-    userPhone.value = data.data.user.phone;
+    userName.value = data.data.user.full_name || data.data.user.name || '';
+    userEmail.value = data.data.user.email || '';
+    userPhone.value = data.data.user.phone || '';
   } catch (error) {
     $toast.error(error.message || 'Failed to fetch user', {
       duration: 5000,
@@ -131,11 +133,15 @@ const submitForm = async () => {
     try {
       const accessToken = localStorage.getItem('access_token');
       const body = {
-        name: userName.value,
+        full_name: userName.value,
         email: userEmail.value,
-        phone: userPhone.value,
-        password: isChangePassword.value ? userPassword.value : ''
+        phone: userPhone.value
       };
+      
+      // Only add password if changing it
+      if (isChangePassword.value) {
+        body.password = userPassword.value;
+      }
       const response = await fetch(`${apiUrl}/api/user/${route.params.id}`, {
         method: 'PUT',
         headers: {

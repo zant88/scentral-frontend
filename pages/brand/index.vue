@@ -42,10 +42,12 @@
                 <td scope="row">{{ i + 1 }}</td>
                 <td class="image-container">
                   <img :src="item.logo_url" class="logo" />
-                  <a href="#" @click="showEdit(item)" >{{ item.name }}</a>
+                  <NuxtLink :to="`/brand/update/${item.id}`" class="d-block">
+                    {{ item.name }}
+                  </NuxtLink>
                 </td>
                 <td>{{ item.description }}</td>
-                <td class="balance-cell">{{ formatCurrency(item.balance || 0) }}</td>
+                <td class="balance-cell">{{ item.balance || 0 }}</td>
                 <td>{{ item.is_active ? 'Yes' : 'No' }}</td>
                 <td class="actions-cell">
                   <button @click="showTopUp(item)" class="btn btn-sm btn-success" title="Top Up Balance">

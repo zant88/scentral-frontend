@@ -31,6 +31,20 @@
                 </div>
                 <div class="col-md-12">
                   <div class="mb-3">
+                    <label for="brandUser" class="form-label">Assigned User</label>
+                    <select class="form-control" id="brandUser" v-model="selectedUserId">
+                      <option value="">No user assigned</option>
+                      <option v-for="user in users" :key="user.id" :value="user.id">
+                        {{ user.full_name || user.username || user.email || `User ${user.id}` }}
+                      </option>
+                    </select>
+                    <small class="form-text text-muted">
+                      Select a user to assign to this brand, or leave empty to unassign.
+                    </small>
+                  </div>
+                </div>
+                <div class="col-md-12">
+                  <div class="mb-3">
                     <label for="brandActive" class="form-label">Active</label>
                     <input type="checkbox" id="brandActive" v-model="brandActive">
                   </div>
@@ -94,6 +108,8 @@ const logoError = ref('');
 const isDragOver = ref(false);
 const fileInput = ref(null);
 const currentLogoUrl = ref('');
+const users = ref([]);
+const selectedUserId = ref('');
 
 const triggerFileInput = () => { fileInput.value.click(); };
 const onDragOver = () => { isDragOver.value = true; };
@@ -143,6 +159,13 @@ const fetchBrand = async () => {
     brandName.value = brand.name;
     brandDescription.value = brand.description;
     brandActive.value = brand.is_active;
+    
+    // Set users for dropdown
+    users.value = brand.users || [];
+    
+    // Set selected user ID (0 or null means no user assigned)
+    selectedUserId.value = brand.user_id && brand.user_id !== 0 ? brand.user_id : '';
+    
     if (brand.logo_url) {
       currentLogoUrl.value = brand.logo_url;
       logoPreview.value = brand.logo_url;
@@ -161,6 +184,12 @@ const submitForm = async () => {
       formData.append('name', brandName.value);
       formData.append('description', brandDescription.value);
       formData.append('is_active', brandActive.value);
+      
+      // Add user_id to form data
+      if (selectedUserId.value) {
+        formData.append('user_id', selectedUserId.value);
+      }
+      
       if (logoFile.value) formData.append('logo', logoFile.value);
       const response = await fetchWithAuth(`${apiUrl}/api/brand/${route.params.id}`, {
         method: 'PUT',
