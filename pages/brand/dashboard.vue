@@ -154,7 +154,7 @@
                 <td>
                   <div class="video-info d-flex align-items-center">
                     <img
-                      :src="video.thumbnail_url || '/assets/img/no-image.jpg'"
+                      :src="video.thumbnail_url || '/img/no-camera.png'"
                       :alt="video.title"
                       class="video-thumbnail-small mr-3"
                       style="width: 60px; height: 45px; object-fit: cover; border-radius: 4px;"

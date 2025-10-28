@@ -22,7 +22,7 @@
             </div>
             <div class="card-wrap">
               <div class="card-header">
-                <h4>Booked Slots</h4>
+                <h4>Total Slots</h4>
               </div>
               <div class="card-body">
                 {{ slotStats.total_slots }}
@@ -70,7 +70,7 @@
                 <h4>Spent Today</h4>
               </div>
               <div class="card-body">
-                {{ formatCurrency(slotStats.spent_today) }}
+                {{ formatNumber(slotStats.spent_today) }}
               </div>
             </div>
           </div>
@@ -96,15 +96,7 @@
                 <i class="fas fa-list"></i> List
               </button>
             </div>
-            <div class="ml-2">
-              <input
-                type="date"
-                v-model="selectedDate"
-                @change="fetchSlotsForDate"
-                class="form-control form-control-sm"
-                style="width: 150px;"
-              />
-            </div>
+
           </div>
         </div>
         <div class="card-body">
@@ -174,13 +166,6 @@
                         <span class="detail-value">{{ formatDuration(slot.general_seconds) }}</span>
                       </div>
                     </div>
-                    <button
-                      v-if="canBookSlot(slot)"
-                      @click.stop="bookSlot(slot)"
-                      class="book-slot-btn"
-                    >
-                      <i class="fas fa-plus"></i> Book This Slot
-                    </button>
                   </div>
 
                   <!-- Slot is booked by current user -->
@@ -369,94 +354,92 @@
           </div>
         </div>
       </div>
-
-      <!-- Slot Details Modal -->
-      <div v-if="showDetailsModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeDetailsModal">
-        <div class="modal-dialog modal-lg modal-dialog-centered">
-          <div class="modal-content">
-            <div class="modal-header">
-              <h5 class="modal-title">Slot Details</h5>
-              <button type="button" class="btn-close" @click="closeDetailsModal"></button>
+    </div>
+  </section>
+  <!-- Slot Details Modal -->
+  <div v-if="showDetailsModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeDetailsModal">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Slot Details</h5>
+          <button type="button" class="btn-close" @click="closeDetailsModal"></button>
+        </div>
+        <div class="modal-body">
+          <div v-if="selectedSlot" class="row">
+            <div class="col-md-6">
+              <h6>Schedule Information</h6>
+              <table class="table table-sm">
+                <tbody>
+                  <tr>
+                    <td><strong>Date:</strong></td>
+                    <td>{{ formatDate(selectedSlot.slot_date) }}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Time:</strong></td>
+                    <td>{{ formatTime(selectedSlot.start_time) }} - {{ formatTime(selectedSlot.end_time) }}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Duration:</strong></td>
+                    <td>{{ formatDuration(selectedSlot.duration_seconds) }}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Status:</strong></td>
+                    <td>
+                      <span :class="getStatusBadgeClass(selectedSlot.status)" class="badge">
+                        {{ selectedSlot.status?.toUpperCase() }}
+                      </span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td><strong>Cost:</strong></td>
+                    <td>{{ formatCurrency(selectedSlot.cost) }}</td>
+                  </tr>
+                </tbody>
+                
+              </table>
             </div>
-            <div class="modal-body">
-              <div v-if="selectedSlot" class="row">
-                <div class="col-md-6">
-                  <h6>Schedule Information</h6>
-                  <table class="table table-sm">
-                    <tbody>
-                      <tr>
-                        <td><strong>Date:</strong></td>
-                        <td>{{ formatDate(selectedSlot.slot_date) }}</td>
-                      </tr>
-                      <tr>
-                        <td><strong>Time:</strong></td>
-                        <td>{{ formatTime(selectedSlot.start_time) }} - {{ formatTime(selectedSlot.end_time) }}</td>
-                      </tr>
-                      <tr>
-                        <td><strong>Duration:</strong></td>
-                        <td>{{ formatDuration(selectedSlot.duration_seconds) }}</td>
-                      </tr>
-                      <tr>
-                        <td><strong>Status:</strong></td>
-                        <td>
-                          <span :class="getStatusBadgeClass(selectedSlot.status)" class="badge">
-                            {{ selectedSlot.status?.toUpperCase() }}
-                          </span>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td><strong>Cost:</strong></td>
-                        <td>{{ formatCurrency(selectedSlot.cost) }}</td>
-                      </tr>
-                    </tbody>
-                    
-                  </table>
-                </div>
-                <div class="col-md-6">
-                  <h6>Video Information</h6>
-                  <div class="video-info">
-                    <img 
-                      :src="selectedSlot.video_thumbnail || '/assets/img/no-image.jpg'" 
-                      :alt="selectedSlot.video_title"
-                      class="img-fluid rounded mb-2"
-                    />
-                    <h6>{{ selectedSlot.video_title }}</h6>
-                    <p class="text-muted small">{{ selectedSlot.video_description }}</p>
-                    
-                    <table class="table table-sm">
-                      <tbody>
-                        <tr>
-                          <td><strong>Type:</strong></td>
-                          <td>
-                            <span :class="getAdTypeBadgeClass(selectedSlot.ad_type)" class="badge">
-                              {{ selectedSlot.ad_type?.toUpperCase() }}
-                            </span>
-                          </td>
-                        </tr>
-                        <tr>
-                          <td><strong>Device:</strong></td>
-                          <td>{{ selectedSlot.device_name || 'N/A' }}</td>
-                        </tr>
-                        <tr>
-                          <td><strong>Created:</strong></td>
-                          <td>{{ formatDateTime(selectedSlot.created_at) }}</td>
-                        </tr>
-                      </tbody>
-                      
-                    </table>
-                  </div>
-                </div>
+            <div class="col-md-6">
+              <h6>Video Information</h6>
+              <div class="video-info">
+                <img 
+                  :src="selectedSlot.video_thumbnail || '/assets/img/no-image.jpg'" 
+                  :alt="selectedSlot.video_title"
+                  class="img-fluid rounded mb-2"
+                />
+                <h6>{{ selectedSlot.video_title }}</h6>
+                <p class="text-muted small">{{ selectedSlot.video_description }}</p>
+                
+                <table class="table table-sm">
+                  <tbody>
+                    <tr>
+                      <td><strong>Type:</strong></td>
+                      <td>
+                        <span :class="getAdTypeBadgeClass(selectedSlot.ad_type)" class="badge">
+                          {{ selectedSlot.ad_type?.toUpperCase() }}
+                        </span>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td><strong>Device:</strong></td>
+                      <td>{{ selectedSlot.device_name || 'N/A' }}</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Created:</strong></td>
+                      <td>{{ formatDateTime(selectedSlot.created_at) }}</td>
+                    </tr>
+                  </tbody>
+                  
+                </table>
               </div>
-            </div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-secondary" @click="closeDetailsModal">Close</button>
             </div>
           </div>
         </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @click="closeDetailsModal">Close</button>
+        </div>
       </div>
-
-      </div>
-  </section>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -503,6 +486,20 @@ const itemsPerPage = 10;
 const showDetailsModal = ref(false);
 const selectedSlot = ref(null);
 
+// Tab functionality
+const activeTab = ref('today');
+const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const calendarDays = ref([]);
+const currentWeekStart = ref(new Date());
+
+// Date tabs configuration
+const dateTabs = [
+  { key: 'today', label: 'Today', icon: 'fas fa-calendar-day' },
+  { key: 'week', label: 'This Week', icon: 'fas fa-calendar-week' },
+  { key: 'month', label: 'This Month', icon: 'fas fa-calendar' },
+  { key: 'all', label: 'All', icon: 'fas fa-calendar-alt' }
+];
+
 
 // Navigation function
 const navigateTo = (path) => {
@@ -516,7 +513,7 @@ const fetchAvailableSlots = async () => {
     const accessToken = localStorage.getItem('access_token');
     
     // Call the real API endpoint for available slots
-    const slotsResponse = await fetchWithAuth(`${apiUrl}/api/slots`, {
+    const slotsResponse = await fetchWithAuth(`${apiUrl}/api/slots?status=ACTIVE`, {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     });
     
@@ -524,7 +521,7 @@ const fetchAvailableSlots = async () => {
     console.log('Slots API Response:', slotsData);
     
     // Also fetch booked slots with user video amounts
-    const bookedResponse = await fetchWithAuth(`${apiUrl}/api/brand/dashboard/slots?status=ACTIVE`, {
+    const bookedResponse = await fetchWithAuth(`${apiUrl}/api/brand/dashboard/slots`, {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     });
     
@@ -802,10 +799,143 @@ const getStatusBadgeClass = (status) => {
   }
 };
 
+// Enhanced functionality functions
+const getCurrentTabLabel = () => {
+  const tab = dateTabs.find(t => t.key === activeTab.value);
+  return tab ? tab.label : 'Today';
+};
+
+const fetchSlotsForTab = async (tab) => {
+  loading.value = true;
+  try {
+    let startDate, endDate;
+    const today = new Date();
+
+    switch (tab) {
+      case 'today':
+        startDate = today.toISOString().split('T')[0];
+        endDate = today.toISOString().split('T')[0];
+        selectedDate.value = startDate;
+        break;
+      case 'week':
+        const weekStart = new Date(today);
+        weekStart.setDate(today.getDate() - today.getDay());
+        startDate = weekStart.toISOString().split('T')[0];
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
+        endDate = weekEnd.toISOString().split('T')[0];
+        selectedDate.value = startDate;
+        break;
+      case 'month':
+        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+        startDate = monthStart.toISOString().split('T')[0];
+        const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        endDate = monthEnd.toISOString().split('T')[0];
+        selectedDate.value = startDate;
+        break;
+      case 'all':
+        startDate = '';
+        endDate = '';
+        break;
+    }
+
+    await fetchAvailableSlots();
+    if (tab === 'week') {
+      generateCalendarDays();
+    }
+  } catch (error) {
+    console.error('Error fetching slots for tab:', error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+// Calendar functions
+const generateCalendarDays = () => {
+  const weekStart = new Date(currentWeekStart.value);
+  const days = [];
+
+  for (let i = 0; i < 35; i++) {
+    const currentDate = new Date(weekStart);
+    currentDate.setDate(weekStart.getDate() + i);
+
+    const dayOfWeek = currentDate.getDay();
+    const isCurrentMonth = currentDate.getMonth() === new Date().getMonth();
+
+    // Get slots for this date
+    const daySlots = availableSlots.value.filter(slot => {
+      // This would need to be enhanced to check if slot date matches current date
+      // For now, we'll simulate based on time
+      return true; // Placeholder - would need actual date comparison
+    });
+
+    days.push({
+      day: currentDate.getDate(),
+      date: currentDate.toISOString().split('T')[0],
+      dayOfWeek: dayOfWeek,
+      isCurrentMonth: isCurrentMonth,
+      isToday: currentDate.toDateString() === new Date().toDateString(),
+      slots: daySlots,
+      totalSlots: daySlots.length
+    });
+  }
+
+  calendarDays.value = days;
+};
+
+const getWeekRange = () => {
+  const start = new Date(currentWeekStart.value);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+
+  return `${formatDate(start.toISOString().split('T')[0])} - ${formatDate(end.toISOString().split('T')[0])}`;
+};
+
+const previousWeek = () => {
+  currentWeekStart.value.setDate(currentWeekStart.value.getDate() - 7);
+  generateCalendarDays();
+};
+
+const nextWeek = () => {
+  currentWeekStart.value.setDate(currentWeekStart.value.getDate() + 7);
+  generateCalendarDays();
+};
+
+const selectCalendarDay = (day) => {
+  if (day.slots.length > 0) {
+    selectedDate.value = day.date;
+    // Fetch slots for selected date
+    fetchAvailableSlots();
+    // Optionally switch to timeline view
+    viewMode.value = 'timeline';
+  }
+};
+
+// Enhanced styling functions
+const getCalendarDayClass = (day) => {
+  return {
+    'calendar-day-today': day.isToday,
+    'calendar-day-other-month': !day.isCurrentMonth,
+    'calendar-day-has-slots': day.slots.length > 0,
+    'calendar-day-clickable': day.slots.length > 0
+  };
+};
+
+const getSlotDotClass = (slot) => {
+  if (slot.is_available) {
+    return 'slot-dot-available';
+  } else if (slot.video_assignment) {
+    return 'slot-dot-booked';
+  } else {
+    return 'slot-dot-unavailable';
+  }
+};
+
 
 // Lifecycle
 onMounted(async () => {
   await Promise.all([fetchAvailableSlots(), fetchVideos()]);
+  generateCalendarDays();
 });
 </script>
 
@@ -828,10 +958,11 @@ onMounted(async () => {
   color: #fff;
   font-size: 2rem;
   border-radius: 0 0 0 100%;
+  margin: 0;
 }
 
 .card-statistic-1 .card-wrap {
-  padding: 1.5rem 1.5rem 1.5rem 7rem;
+  padding: 1.5rem 1.5rem 1.5rem 1.8rem;
 }
 
 .card-statistic-1 .card-header h4 {

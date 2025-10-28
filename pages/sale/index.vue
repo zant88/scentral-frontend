@@ -161,11 +161,15 @@
                 <tr>
                   <th>Sales Code</th>
                   <th>Date</th>
+                  <th>Time</th>
                   <th>Device</th>
                   <th>Product</th>
+                  <th>Category</th>
                   <th>Brand</th>
+                  <th>Customer Phone</th>
                   <th>Quantity</th>
                   <th>Price</th>
+                  <th>Discount</th>
                   <th>Total</th>
                   <th>Status</th>
                   <th>Actions</th>
@@ -173,7 +177,7 @@
               </thead>
               <tbody>
                 <tr v-if="loading">
-                  <td colspan="10" class="text-center">
+                  <td colspan="14" class="text-center">
                     <div class="spinner-border spinner-border-sm" role="status">
                       <span class="sr-only">Loading...</span>
                     </div>
@@ -181,18 +185,22 @@
                   </td>
                 </tr>
                 <tr v-else-if="sales.length === 0">
-                  <td colspan="10" class="text-center text-muted">
+                  <td colspan="14" class="text-center text-muted">
                     No sales records found
                   </td>
                 </tr>
                 <tr v-else v-for="sale in sales" :key="sale.id">
                   <td>{{ sale.sales_code }}</td>
                   <td>{{ formatDate(sale.created_at) }}</td>
-                  <td>{{ sale.machine?.machine_code || sale.machine?.code || 'N/A' }}</td>
-                  <td>{{ sale.product?.name || 'N/A' }}</td>
-                  <td>{{ sale.product?.brand?.name || 'N/A' }}</td>
+                  <td>{{ formatTime(sale.created_at) }}</td>
+                  <td>{{ sale.machine?.machine_code || sale.machine?.code || '' }}</td>
+                  <td>{{ sale.product?.name || '' }}</td>
+                  <td>{{ sale.product?.category?.name || '' }}</td>
+                  <td>{{ sale.product?.brand?.name || '' }}</td>
+                  <td>{{ sale.customer?.phone || sale.customer?.user?.phone || '' }}</td>
                   <td>{{ sale.quantity }}</td>
                   <td>Rp {{ formatNumber(sale.selling_price) }}</td>
+                  <td>{{ sale.discount ? `${sale.discount}%` : '0%' }}</td>
                   <td>Rp {{ formatNumber(sale.total_price) }}</td>
                   <td>
                     <span
@@ -420,13 +428,21 @@ const changePage = (page) => {
 }
 
 const formatDate = (dateString) => {
-  if (!dateString) return 'N/A'
+  if (!dateString) return ''
   return new Date(dateString).toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
-    day: 'numeric',
+    day: 'numeric'
+  })
+}
+
+const formatTime = (dateString) => {
+  if (!dateString) return ''
+  return new Date(dateString).toLocaleTimeString('en-US', {
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
   })
 }
 
@@ -440,7 +456,8 @@ const getStatusClass = (status) => {
     'paid': 'badge-success',
     'pending': 'badge-warning',
     'canceled': 'badge-danger',
-    'refunded': 'badge-info'
+    'refunded': 'badge-info',
+    'failed': 'badge-danger'
   }
   return statusClasses[status] || 'badge-secondary'
 }
@@ -583,39 +600,78 @@ const generateSalesCSVData = (salesData = null) => {
     ['Export Period', `${filters.value.date_from || 'All time'} to ${filters.value.date_to || 'Present'}`],
     ['Total Records', dataToExport.length],
     ['Filter Applied', filters.value.q ? `Search: ${filters.value.q}` : 'None'],
-    ['', '', '', '', '', '', '', '', ''], // Empty row for separation
+    ['', '', '', '', '', '', '', '', '', '', '', '', ''], // Empty row for separation
   ];
 
-  const headers = ['Sales Code', 'Date', 'Device', 'Product', 'Brand', 'Quantity', 'Price', 'Total', 'Status'];
+  const headers = [
+    'Sales Code',
+    'Date',
+    'Time',
+    'Device',
+    'Product',
+    'Category',
+    'Brand',
+    'Customer Phone',
+    'Quantity',
+    'Price',
+    'Discount',
+    'Total',
+    'Status'
+  ];
+
   const salesRows = [];
 
   dataToExport.forEach(sale => {
     salesRows.push([
       sale.sales_code || '',
       formatDate(sale.created_at),
-      sale.machine?.machine_code || sale.machine?.code || 'N/A',
-      sale.product?.name || 'N/A',
-      sale.product?.brand?.name || 'N/A',
+      formatTime(sale.created_at),
+      sale.machine?.machine_code || sale.machine?.code || '',
+      sale.product?.name || '',
+      sale.product?.category?.name || '',
+      sale.product?.brand?.name || '',
+      sale.customer?.phone || sale.customer?.user?.phone || '',
       sale.quantity || 0,
       `Rp ${formatNumber(sale.selling_price)}`,
+      sale.discount ? `${sale.discount}%` : '0%',
       `Rp ${formatNumber(sale.total_price)}`,
-      sale.payment_status || 'N/A'
+      sale.payment_status || ''
     ]);
   });
 
   // Add summary statistics at the end
   const totalRevenue = dataToExport.reduce((sum, sale) => sum + (sale.total_price || 0), 0);
   const totalQuantity = dataToExport.reduce((sum, sale) => sum + (sale.quantity || 0), 0);
+  const totalDiscount = dataToExport.reduce((sum, sale) => sum + ((sale.total_price || 0) * (sale.discount || 0) / 100), 0);
   const paidSales = dataToExport.filter(sale => sale.payment_status === 'paid').length;
   const pendingSales = dataToExport.filter(sale => sale.payment_status === 'pending').length;
+  const failedSales = dataToExport.filter(sale => sale.payment_status === 'failed').length;
+
+  // Analyze top categories
+  const categoryStats = {};
+  dataToExport.forEach(sale => {
+    const category = sale.product?.category?.name || 'Uncategorized';
+    categoryStats[category] = (categoryStats[category] || 0) + (sale.quantity || 0);
+  });
+
+  const topCategories = Object.entries(categoryStats)
+    .sort(([,a], [,b]) => b - a)
+    .slice(0, 5);
 
   const summaryFooter = [
-    ['', '', '', '', '', '', '', '', ''], // Empty row for separation
+    ['', '', '', '', '', '', '', '', '', '', '', '', ''], // Empty row for separation
     ['SUMMARY STATISTICS'],
-    ['Total Revenue', '', '', '', '', '', '', `Rp ${formatNumber(totalRevenue)}`, ''],
-    ['Total Quantity Sold', '', '', '', '', totalQuantity, '', '', ''],
-    ['Paid Sales', '', '', '', '', paidSales, '', '', ''],
-    ['Pending Sales', '', '', '', '', pendingSales, '', '', ''],
+    ['Total Revenue', '', '', '', '', '', '', '', '', '', `Rp ${formatNumber(totalRevenue)}`, '', ''],
+    ['Total Quantity Sold', '', '', '', '', '', '', '', totalQuantity, '', '', '', ''],
+    ['Total Discount Amount', '', '', '', '', '', '', '', '', '', `Rp ${formatNumber(totalDiscount)}`, '', ''],
+    ['Paid Sales', '', '', '', '', '', '', '', '', '', paidSales, '', ''],
+    ['Pending Sales', '', '', '', '', '', '', '', '', '', pendingSales, '', ''],
+    ['Failed Sales', '', '', '', '', '', '', '', '', '', failedSales, '', ''],
+    ['', '', '', '', '', '', '', '', '', '', '', '', ''], // Empty row for separation
+    ['TOP CATEGORIES BY QUANTITY'],
+    ...topCategories.map(([category, quantity], index) => [
+      `${index + 1}. ${category}`, '', '', '', '', '', '', '', quantity, '', '', '', ''
+    ])
   ];
 
   return {
@@ -668,6 +724,26 @@ onMounted(async () => {
 
 .table-responsive {
   min-height: 400px;
+  overflow-x: auto;
+}
+
+/* Responsive table adjustments */
+@media (max-width: 1200px) {
+  .table-responsive {
+    font-size: 0.875rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .table-responsive {
+    font-size: 0.75rem;
+  }
+
+  .table th,
+  .table td {
+    padding: 0.5rem;
+    white-space: nowrap;
+  }
 }
 
 .badge {

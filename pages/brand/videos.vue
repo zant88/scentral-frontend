@@ -167,7 +167,7 @@
                     <div class="row mt-2">
                       <div class="col-6">
                         <small class="text-muted">Spend:</small><br>
-                        <strong>{{ formatCurrency(video.total_cost || 0) }}</strong>
+                        <strong>{{ formatNumber(video.total_cost || 0) }}</strong>
                       </div>
                       <div class="col-6">
                         <small class="text-muted">Created:</small><br>
@@ -188,9 +188,12 @@
                   </div> -->
 
                   <div class="mt-3 text-center">
-                    <button @click="showVideoDetails(video)" class="btn btn-sm btn-outline-primary">
-                      <i class="fas fa-eye mr-1"></i>View Details
-                    </button>
+                    <div class="btn-group" role="group">
+                      <button @click="showVideoDetails(video)" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-eye mr-1"></i>View Details
+                      </button>
+                      
+                    </div>
                   </div>
                 </div>
               </div>
@@ -227,98 +230,110 @@
           </nav>
         </div>
       </div>
+    </div>
+  </section>
 
-      <!-- Video Details Modal -->
-      <div v-if="showDetailsModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeDetailsModal">
-        <div class="modal-dialog modal-lg modal-dialog-centered">
-          <div class="modal-content">
-            <div class="modal-header">
-              <h5 class="modal-title">Video Details - {{ selectedVideo?.title }}</h5>
-              <button type="button" class="btn-close" @click="closeDetailsModal"></button>
-            </div>
-            <div class="modal-body">
-              <div v-if="selectedVideo" class="row">
-                <div class="col-md-6">
-                  <img 
-                    :src="selectedVideo.thumbnail_url || '/img/no-camera.png'" 
-                    :alt="selectedVideo.title"
-                    class="img-fluid rounded"
-                  />
+  <!-- Video Details Modal -->
+  <div v-if="showDetailsModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeDetailsModal">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Video Details - {{ selectedVideo?.title }}</h5>
+          <button type="button" class="btn-close" @click="closeDetailsModal"></button>
+        </div>
+        <div class="modal-body">
+          <div v-if="selectedVideo" class="row">
+            <div class="col-md-6">
+              <!-- Video Player -->
+              <div class="video-player-container mb-3">
+                <video
+                  ref="videoPlayer"
+                  :src="selectedVideo.video_url || selectedVideo.url"
+                  :poster="selectedVideo.thumbnail_url || '/img/no-camera.png'"
+                  class="video-player"
+                  controls
+                  preload="metadata"
+                  @error="handleVideoError"
+                  @loadedmetadata="handleVideoLoaded"
+                >
+                  Your browser does not support the video tag.
+                </video>
+                
+                <!-- Video Loading/Error States -->
+                <div v-if="videoLoading" class="video-loading-overlay">
+                  <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    <p class="text-muted mt-2">Loading video...</p>
+                  </div>
                 </div>
-                <div class="col-md-6">
-                  <h5>{{ selectedVideo.title }}</h5>
-                  <p class="text-muted">{{ selectedVideo.description }}</p>
-                  
-                  <table class="table table-sm">
-                    <tbody>
-                      <tr>
-                        <td><strong>Status:</strong></td>
-                        <td>
-                          <span :class="getStatusBadgeClass(selectedVideo.status)" class="badge">
-                            {{ selectedVideo.status?.toUpperCase() }}
-                          </span>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td><strong>Type:</strong></td>
-                        <td>
-                          <span :class="getAdTypeBadgeClass(selectedVideo.ad_type)" class="badge">
-                            {{ selectedVideo.ad_type?.toUpperCase() }}
-                          </span>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td><strong>Duration:</strong></td>
-                        <td>{{ formatDuration(selectedVideo.duration_seconds) }}</td>
-                      </tr>
-                      <tr>
-                        <td><strong>Total Plays:</strong></td>
-                        <td>{{ formatNumber(selectedVideo.plays || 0) }}</td>
-                      </tr>
-                      <tr>
-                        <td><strong>Total Spend:</strong></td>
-                        <td>{{ formatCurrency(selectedVideo.total_cost || 0) }}</td>
-                      </tr>
-                      <tr>
-                        <td><strong>Avg Cost/Play:</strong></td>
-                        <td>{{ selectedVideo.plays > 0 ? formatCurrency(selectedVideo.total_cost / selectedVideo.plays) : 'N/A' }}</td>
-                      </tr>
-                      <tr>
-                        <td><strong>Performance Score:</strong></td>
-                        <td>
-                          <div class="progress" style="height: 20px;">
-                            <div 
-                              class="progress-bar" 
-                              :class="getPerformanceClass(selectedVideo.performance_score)"
-                              :style="{ width: Math.min(selectedVideo.performance_score || 0, 100) + '%' }"
-                            >
-                              {{ Math.round(selectedVideo.performance_score || 0) }}%
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td><strong>Created:</strong></td>
-                        <td>{{ formatDateTime(selectedVideo.created_at) }}</td>
-                      </tr>
-                      <tr>
-                        <td><strong>Last Updated:</strong></td>
-                        <td>{{ formatDateTime(selectedVideo.updated_at) }}</td>
-                      </tr>
-                    </tbody>
-                    
-                  </table>
+                
+                <div v-if="videoError" class="video-error-overlay">
+                  <div class="error-content">
+                    <i class="fas fa-exclamation-triangle fa-2x text-warning mb-2"></i>
+                    <p class="text-muted">Failed to load video</p>
+                    <button @click="retryVideoLoad" class="btn btn-sm btn-primary">
+                      <i class="fas fa-redo mr-1"></i>Retry
+                    </button>
+                  </div>
                 </div>
               </div>
+              
+              
             </div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-secondary" @click="closeDetailsModal">Close</button>
+            <div class="col-md-6">
+              <h5>{{ selectedVideo.title }}</h5>
+              <p class="text-muted">{{ selectedVideo.description }}</p>
+              
+              <table class="table table-sm">
+                <tbody>
+                  <tr>
+                    <td><strong>Status:</strong></td>
+                    <td>
+                      <span :class="getStatusBadgeClass(selectedVideo.status)" class="badge">
+                        {{ selectedVideo.status?.toUpperCase() }}
+                      </span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td><strong>Type:</strong></td>
+                    <td>
+                      <span :class="getAdTypeBadgeClass(selectedVideo.ad_type)" class="badge">
+                        {{ selectedVideo.ad_type?.toUpperCase() }}
+                      </span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td><strong>Duration:</strong></td>
+                    <td>{{ formatDuration(selectedVideo.duration_seconds) }}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Total Plays:</strong></td>
+                    <td>{{ formatNumber(selectedVideo.plays || 0) }}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Total Spend:</strong></td>
+                    <td>{{ formatNumber(selectedVideo.total_cost || 0) }}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Avg Cost/Play:</strong></td>
+                    <td>{{ selectedVideo.plays > 0 ? formatNumber(selectedVideo.total_cost / selectedVideo.plays) : 'N/A' }}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Created:</strong></td>
+                    <td>{{ formatDateTime(selectedVideo.created_at) }}</td>
+                  </tr>
+                </tbody>
+                
+              </table>
             </div>
           </div>
         </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @click="closeDetailsModal">Close</button>
+        </div>
       </div>
     </div>
-  </section>
+  </div>
 </template>
 
 <script setup>
@@ -326,7 +341,7 @@ definePageMeta({
   middleware: 'brand'
 })
 
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { fetchWithAuth } from '~/utils/auth.js';
 import { useToast } from 'vue-toast-notification';
@@ -359,6 +374,11 @@ const itemsPerPage = 9;
 const showDetailsModal = ref(false);
 const selectedVideo = ref(null);
 
+// Video player states
+const videoPlayer = ref(null);
+const videoLoading = ref(false);
+const videoError = ref(false);
+
 // Navigation function
 const navigateTo = (path) => {
   router.push(path);
@@ -373,7 +393,48 @@ const fetchVideos = async () => {
     });
     const data = await response.json();
     if (data.success) {
-      videos.value = data.data || [];
+      // Log the API response to understand the data structure
+      console.log('Videos API Response:', data);
+      
+      // Process videos to ensure they have proper URLs
+      const processedVideos = (data.data || []).map(video => {
+        console.log(`Processing video ${video.id}:`, {
+          title: video.title,
+          backend_video_url: video.video_url,
+          file_path: video.file_path
+        });
+
+        // Use video_url from backend if available, otherwise construct fallback URLs
+        if (video.video_url) {
+          // Backend provided video URL - use it directly
+          console.log(`Using backend video URL for ${video.title}:`, video.video_url);
+          return {
+            ...video,
+            video_url: video.video_url,
+            possible_video_urls: [video.video_url]
+          };
+        } else {
+          // Fallback: construct possible URLs if backend doesn't provide one
+          const videoId = video.id;
+          const possibleUrls = [
+            video.file_path ? `${apiUrl}/${video.file_path}` : null,
+            `${apiUrl}/api/videos/${videoId}/stream`,
+            `${apiUrl}/api/brand/videos/${videoId}/play`,
+            `${apiUrl}/uploads/videos/${videoId}.mp4`,
+            `${apiUrl}/storage/videos/${videoId}.mp4`
+          ].filter(url => url !== null);
+
+          console.log(`Using fallback URLs for ${video.title}:`, possibleUrls);
+
+          return {
+            ...video,
+            video_url: possibleUrls[0] || null,
+            possible_video_urls: possibleUrls
+          };
+        }
+      });
+      
+      videos.value = processedVideos;
       calculateStats();
     }
   } catch (error) {
@@ -455,17 +516,104 @@ const filterVideos = () => {
 const showVideoDetails = (video) => {
   selectedVideo.value = video;
   showDetailsModal.value = true;
+  
+  // Try to load video with fallback URLs when modal opens
+  nextTick(() => {
+    tryLoadVideoWithFallback();
+  });
 };
 
 // Close details modal
 const closeDetailsModal = () => {
   showDetailsModal.value = false;
   selectedVideo.value = null;
+  videoError.value = false;
+  videoLoading.value = false;
+  
+  // Stop video playback when modal closes
+  if (videoPlayer.value) {
+    videoPlayer.value.pause();
+    videoPlayer.value.currentTime = 0;
+  }
 };
+
+// Video player functions
+const handleVideoError = () => {
+  videoLoading.value = false;
+  videoError.value = true;
+  console.error('Video failed to load');
+};
+
+const handleVideoLoaded = () => {
+  videoLoading.value = false;
+  videoError.value = false;
+  console.log('Video loaded successfully');
+};
+
+const retryVideoLoad = async () => {
+  videoError.value = false;
+  videoLoading.value = true;
+  
+  if (videoPlayer.value && selectedVideo.value) {
+    // Try different URL patterns if current one fails
+    if (selectedVideo.value.possible_video_urls && selectedVideo.value.possible_video_urls.length > 0) {
+      let currentSrc = videoPlayer.value.src;
+      let currentIndex = selectedVideo.value.possible_video_urls.indexOf(currentSrc);
+      let nextIndex = (currentIndex + 1) % selectedVideo.value.possible_video_urls.length;
+      
+      console.log(`Trying video URL ${nextIndex + 1}:`, selectedVideo.value.possible_video_urls[nextIndex]);
+      videoPlayer.value.src = selectedVideo.value.possible_video_urls[nextIndex];
+    } else {
+      videoPlayer.value.load();
+    }
+  }
+};
+
+// Function to try loading video with fallback URLs
+const tryLoadVideoWithFallback = async () => {
+  if (!selectedVideo.value) return;
+  
+  videoLoading.value = true;
+  videoError.value = false;
+  
+  // Try each possible URL until one works
+  if (selectedVideo.value.possible_video_urls) {
+    for (let i = 0; i < selectedVideo.value.possible_video_urls.length; i++) {
+      try {
+        const url = selectedVideo.value.possible_video_urls[i];
+        console.log(`Attempting to load video from URL ${i + 1}:`, url);
+        
+        // Test if URL is accessible
+        const testResponse = await fetch(url, { method: 'HEAD' });
+        if (testResponse.ok) {
+          if (videoPlayer.value) {
+            videoPlayer.value.src = url;
+            return; // Success, stop trying other URLs
+          }
+        }
+      } catch (error) {
+        console.log(`URL ${i + 1} failed:`, error);
+        continue; // Try next URL
+      }
+    }
+  }
+  
+  // If all URLs fail, show error
+  videoLoading.value = false;
+  videoError.value = true;
+};
+
+// Watch for video selection changes
+watch(selectedVideo, (newVideo) => {
+  if (newVideo) {
+    videoLoading.value = true;
+    videoError.value = false;
+  }
+});
 
 // Utility functions
 const formatNumber = (num) => {
-  return new Intl.NumberFormat().format(num || 0);
+  return new Intl.NumberFormat('id-ID').format(num || 0);
 };
 
 const formatCurrency = (amount) => {
@@ -648,5 +796,78 @@ onMounted(fetchVideos);
 
 .progress-bar {
   transition: width 0.6s ease;
+}
+
+/* Video Player Styles */
+.video-player-container {
+  position: relative;
+  width: 100%;
+  background-color: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.video-player {
+  width: 100%;
+  height: auto;
+  max-height: 300px;
+  display: block;
+  border-radius: 8px;
+}
+
+.video-loading-overlay,
+.video-error-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.8);
+  border-radius: 8px;
+}
+
+.loading-spinner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(255, 255, 255, 0.3);
+  border-top: 4px solid #007bff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.error-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  text-align: center;
+  padding: 20px;
+}
+
+.video-info-section {
+  margin-top: 15px;
+}
+
+.video-info-section h6 {
+  color: #495057;
+  font-weight: 600;
+  margin-bottom: 10px;
 }
 </style>
