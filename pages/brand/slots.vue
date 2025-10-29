@@ -80,8 +80,10 @@
       <!-- Hourly Timeline View -->
       <div class="card">
         <div class="card-header">
-          <h4>Today's Hourly Slots</h4>
+          <h4>{{ getCurrentTabLabel() }} Slots</h4>
           <div class="card-header-action">
+            
+            <!-- View Mode Toggle -->
             <div class="btn-group" role="group">
               <button
                 @click="viewMode = 'timeline'"
@@ -100,12 +102,14 @@
           </div>
         </div>
         <div class="card-body">
+          
+
           <!-- Timeline View -->
           <div v-if="viewMode === 'timeline'" class="timeline-container">
             <div v-if="loading" class="text-center py-4">
               <div class="loading-spinner">
                 <div class="spinner"></div>
-                <p class="text-muted mt-3">Loading today's slots...</p>
+                <p class="text-muted mt-3">Loading {{ getCurrentTabLabel().toLowerCase() }} slots...</p>
               </div>
             </div>
             <div v-else class="slot-timeline">
@@ -507,13 +511,18 @@ const navigateTo = (path) => {
 };
 
 // Fetch available slots with current assignments from API
-const fetchAvailableSlots = async () => {
+const fetchAvailableSlots = async (startDate = '', endDate = '') => {
   try {
     loading.value = true;
     const accessToken = localStorage.getItem('access_token');
     
+    // Build API URL with date range parameters if provided
+    let slotsUrl = `${apiUrl}/api/slots?status=ACTIVE`;
+    if (startDate) slotsUrl += `&start_date=${startDate}`;
+    if (endDate) slotsUrl += `&end_date=${endDate}`;
+    
     // Call the real API endpoint for available slots
-    const slotsResponse = await fetchWithAuth(`${apiUrl}/api/slots?status=ACTIVE`, {
+    const slotsResponse = await fetchWithAuth(slotsUrl, {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     });
     
@@ -521,7 +530,11 @@ const fetchAvailableSlots = async () => {
     console.log('Slots API Response:', slotsData);
     
     // Also fetch booked slots with user video amounts
-    const bookedResponse = await fetchWithAuth(`${apiUrl}/api/brand/dashboard/slots`, {
+    let bookedUrl = `${apiUrl}/api/brand/dashboard/slots`;
+    if (startDate) bookedUrl += `?start_date=${startDate}`;
+    if (endDate) bookedUrl += bookedUrl.includes('?') ? `&end_date=${endDate}` : `?end_date=${endDate}`;
+    
+    const bookedResponse = await fetchWithAuth(bookedUrl, {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     });
     
@@ -565,7 +578,18 @@ const fetchAvailableSlots = async () => {
           } : null,
           plays_count: bookedSlot?.plays_count || 0,
           total_cost: bookedSlot?.total_cost || 0.0,
-          amount: bookedSlot?.amount || 0.0 // Include the amount at slot level
+          amount: bookedSlot?.amount || 0.0, // Include the amount at slot level
+          // Add fields needed for list view
+          slot_date: slot.slot_date || startDate || new Date().toISOString().split('T')[0],
+          video_title: hasAssignment ? bookedSlot.video_title : '',
+          video_description: hasAssignment ? bookedSlot.video_description || '' : '',
+          video_id: hasAssignment ? bookedSlot.video_id : null,
+          ad_type: hasAssignment ? bookedSlot.ad_type || 'general' : '',
+          device_name: hasAssignment ? bookedSlot.device_name || '' : '',
+          duration_seconds: (slot.perfume_seconds || 0) + (slot.general_seconds || 0),
+          cost: hasAssignment ? bookedSlot.cost || 0 : 0,
+          video_thumbnail: hasAssignment ? bookedSlot.video_thumbnail || '' : '',
+          created_at: hasAssignment ? bookedSlot.created_at || new Date().toISOString() : new Date().toISOString()
         };
       });
       
@@ -587,34 +611,111 @@ const fetchAvailableSlots = async () => {
 // Fetch slot assignments (for list view)
 const fetchSlots = async () => {
   try {
+    // Check if we have an access token
     const accessToken = localStorage.getItem('access_token');
-    const response = await fetchWithAuth(`${apiUrl}/api/brand/dashboard/slots`, {
-      headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
+    if (!accessToken) {
+      throw new Error('No access token found. Please log in again.');
+    }
+    
+    console.log('Fetching brand dashboard slots from:', `${apiUrl}/api/brand/dashboard/slots`);
+    
+    const response = await fetchWithAuth(`${apiUrl}/api/brand/dashboard/slots`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
     const data = await response.json();
+    console.log('Brand Dashboard Slots Response:', data);
+    
     if (data.success) {
-      slots.value = data.data || [];
+      // Process the slots data to match our expected format
+      const processedSlots = (data.data || []).map(slot => {
+        return {
+          id: slot.id,
+          slot_date: slot.slot_date || selectedDate.value,
+          video_title: slot.video_title || '',
+          video_description: slot.video_description || '',
+          video_id: slot.video_id,
+          ad_type: slot.ad_type || 'general',
+          status: slot.status || 'active',
+          device_name: slot.device_name || '',
+          duration_seconds: slot.duration_seconds || 0,
+          cost: slot.cost || 0,
+          video_thumbnail: slot.video_thumbnail || '',
+          created_at: slot.created_at || new Date().toISOString(),
+          // Add fields needed for timeline view
+          name: slot.name || `Slot ${slot.id}`,
+          start_time: slot.start_time || '00:00',
+          end_time: slot.end_time || '00:00',
+          perfume_seconds: slot.perfume_seconds || 0,
+          general_seconds: slot.general_seconds || 0,
+          priority: slot.priority || "MEDIUM",
+          allow_perfume: slot.allow_perfume || false,
+          allow_general: slot.allow_general || false,
+          is_available: false, // These are booked slots, so not available
+          video_assignment: slot.video_id ? {
+            id: slot.video_id,
+            title: slot.video_title || "Untitled Video",
+            status: slot.status || "ACTIVE",
+            plays_count: slot.plays_count || 0,
+            total_cost: slot.total_cost || 0.0,
+            amount: slot.amount || 0.0
+          } : null,
+          plays_count: slot.plays_count || 0,
+          total_cost: slot.total_cost || 0.0,
+          amount: slot.amount || 0.0
+        };
+      });
+      
+      slots.value = processedSlots;
+      console.log('Processed list slots:', slots.value.length);
       calculateStats();
+      
+      // Show success message for debugging
+      if (processedSlots.length > 0) {
+        $toast.success(`Loaded ${processedSlots.length} booked slots`, { duration: 2000, position: 'top-right' });
+      }
+    } else {
+      console.error('API Error:', data.message);
+      $toast.error(data.message || 'Failed to fetch booked slots', { duration: 5000, position: 'top-right' });
     }
   } catch (error) {
     console.error('Error fetching slots:', error);
-    $toast.error('Failed to fetch slots', { duration: 5000, position: 'top-right' });
+    $toast.error(`Failed to fetch booked slots: ${error.message}`, { duration: 5000, position: 'top-right' });
   }
 };
 
 // Fetch videos for filter
 const fetchVideos = async () => {
   try {
+    // Check if we have an access token
     const accessToken = localStorage.getItem('access_token');
-    const response = await fetchWithAuth(`${apiUrl}/api/brand/videos`, {
-      headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
+    if (!accessToken) {
+      throw new Error('No access token found. Please log in again.');
+    }
+    
+    console.log('Fetching brand videos from:', `${apiUrl}/api/brand/videos`);
+    
+    const response = await fetchWithAuth(`${apiUrl}/api/brand/videos`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
     const data = await response.json();
+    console.log('Brand Videos Response:', data);
+    
     if (data.success) {
       videos.value = data.data || [];
+      console.log('Loaded videos for filter:', videos.value.length);
+    } else {
+      console.error('API Error:', data.message);
+      $toast.error(data.message || 'Failed to fetch videos', { duration: 5000, position: 'top-right' });
     }
   } catch (error) {
     console.error('Error fetching videos:', error);
+    $toast.error(`Failed to fetch videos: ${error.message}`, { duration: 5000, position: 'top-right' });
   }
 };
 
@@ -680,10 +781,31 @@ const fetchSlotsForDate = async () => {
   await fetchAvailableSlots();
 };
 
+// Get date range for current tab
+const getTabDateRange = () => {
+  const today = new Date();
+  
+  switch (activeTab.value) {
+    case 'today':
+      return today.toLocaleDateString();
+    case 'week':
+      return getWeekRange();
+    case 'month':
+      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+      const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      return `${monthStart.toLocaleDateString()} - ${monthEnd.toLocaleDateString()}`;
+    case 'all':
+      return 'All time';
+    default:
+      return '';
+  }
+};
+
 
 // Filter and sort slots
 const filteredSlots = computed(() => {
-  let filtered = [...slots.value];
+  // Use availableSlots for both timeline and list views
+  let filtered = [...availableSlots.value];
   
   // For list view, only show booked slots (not available)
   if (viewMode.value === 'list') {
@@ -696,13 +818,20 @@ const filteredSlots = computed(() => {
     filtered = filtered.filter(slot =>
       slot.video_title?.toLowerCase().includes(query) ||
       slot.video_description?.toLowerCase().includes(query) ||
-      slot.device_name?.toLowerCase().includes(query)
+      slot.device_name?.toLowerCase().includes(query) ||
+      slot.name?.toLowerCase().includes(query)
     );
   }
   
-  // Status filter - for list view, only show active videos
-  if (filterStatus.value && viewMode.value === 'list') {
-    filtered = filtered.filter(slot => slot.status === 'active');
+  // Status filter
+  if (filterStatus.value) {
+    filtered = filtered.filter(slot => {
+      if (filterStatus.value === 'active') return slot.status === 'active' || slot.status === 'ACTIVE';
+      if (filterStatus.value === 'scheduled') return slot.status === 'scheduled';
+      if (filterStatus.value === 'completed') return slot.status === 'completed';
+      if (filterStatus.value === 'cancelled') return slot.status === 'cancelled';
+      return true;
+    });
   }
   
   // Date filter
@@ -839,7 +968,7 @@ const fetchSlotsForTab = async (tab) => {
         break;
     }
 
-    await fetchAvailableSlots();
+    await fetchAvailableSlots(startDate, endDate);
     if (tab === 'week') {
       generateCalendarDays();
     }
@@ -848,6 +977,17 @@ const fetchSlotsForTab = async (tab) => {
   } finally {
     loading.value = false;
   }
+};
+
+// Tab switching function
+const switchTab = async (tabKey) => {
+  if (activeTab.value === tabKey) return; // Don't do anything if clicking the same tab
+  
+  activeTab.value = tabKey;
+  currentPage.value = 1; // Reset pagination when switching tabs
+  
+  // Fetch slots for the selected tab
+  await fetchSlotsForTab(tabKey);
 };
 
 // Calendar functions
@@ -932,9 +1072,24 @@ const getSlotDotClass = (slot) => {
 };
 
 
+// Watch for tab changes to refresh data
+watch(activeTab, async (newTab) => {
+  await fetchSlotsForTab(newTab);
+});
+
+// Watch for view mode changes
+watch(viewMode, async (newMode) => {
+  if (newMode === 'list' && slots.value.length === 0) {
+    await fetchSlots();
+  }
+});
+
 // Lifecycle
 onMounted(async () => {
-  await Promise.all([fetchAvailableSlots(), fetchVideos()]);
+  // Initialize with today's slots
+  await fetchSlotsForTab('today');
+  await fetchVideos();
+  await fetchSlots(); // Also fetch slots for list view
   generateCalendarDays();
 });
 </script>
@@ -1367,3 +1522,251 @@ onMounted(async () => {
   opacity: 0.75;
 }
 </style>
+
+/* Tab Navigation Styles */
+.card-header-action {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.btn-group.mr-3 {
+  margin-right: 1rem;
+}
+
+.btn-group .btn {
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.btn-group .btn:hover {
+  z-index: 1;
+}
+
+.btn-group .btn.btn-primary {
+  background-color: #007bff;
+  border-color: #007bff;
+  color: white;
+}
+
+.btn-group .btn.btn-outline-primary {
+  background-color: transparent;
+  border-color: #007bff;
+  color: #007bff;
+}
+
+.btn-group .btn.btn-outline-primary:hover {
+  background-color: #007bff;
+  color: white;
+}
+
+/* Tab-specific content styling */
+.tab-content {
+  padding: 1rem 0;
+}
+
+.tab-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background-color: #f8f9fa;
+  border-radius: 0.5rem;
+  border-left: 4px solid #007bff;
+}
+
+.tab-info h6 {
+  margin: 0;
+  color: #495057;
+  font-weight: 600;
+}
+
+.tab-info .date-range {
+  color: #6c757d;
+  font-size: 0.875rem;
+}
+
+/* Enhanced timeline for different tabs */
+.timeline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.timeline-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.timeline-stats {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.timeline-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.timeline-stat-value {
+  font-size: 1.25rem;
+  font-weight: bold;
+  color: #007bff;
+}
+
+.timeline-stat-label {
+  font-size: 0.75rem;
+  color: #6c757d;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Calendar view for week tab */
+.calendar-container {
+  margin-top: 1.5rem;
+}
+
+.calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.calendar-nav {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.calendar-nav button {
+  padding: 0.5rem 0.75rem;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.calendar-nav button:hover {
+  background: #e9ecef;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.5rem;
+}
+
+.calendar-day-header {
+  text-align: center;
+  font-weight: 600;
+  color: #495057;
+  padding: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.calendar-day {
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e9ecef;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  background: white;
+}
+
+.calendar-day:hover {
+  background: #f8f9fa;
+  border-color: #dee2e6;
+}
+
+.calendar-day-today {
+  background: #e3f2fd;
+  border-color: #007bff;
+  font-weight: bold;
+}
+
+.calendar-day-other-month {
+  color: #adb5bd;
+  background: #f8f9fa;
+}
+
+.calendar-day-has-slots {
+  border-color: #28a745;
+}
+
+.calendar-day-clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.calendar-day-number {
+  font-size: 0.875rem;
+  margin-bottom: 0.25rem;
+}
+
+.calendar-day-slots {
+  display: flex;
+  gap: 2px;
+  margin-top: 0.25rem;
+}
+
+.slot-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.slot-dot-available {
+  background: #ffc107;
+}
+
+.slot-dot-booked {
+  background: #28a745;
+}
+
+.slot-dot-unavailable {
+  background: #6c757d;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .card-header-action {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+  
+  .btn-group {
+    width: 100%;
+  }
+  
+  .btn-group .btn {
+    flex: 1;
+  }
+  
+  .timeline-stats {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .calendar-grid {
+    gap: 0.25rem;
+  }
+  
+  .calendar-day {
+    font-size: 0.75rem;
+  }
+}

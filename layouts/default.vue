@@ -301,8 +301,8 @@
     const accessToken = localStorage.getItem('access_token');
     const currentPath = window.location.pathname;
     
-    // If not logged in and not on login page, redirect to login
-    if (!accessToken && currentPath !== '/login') {
+    // If not logged in and not on login page or video player page, redirect to login
+    if (!accessToken && currentPath !== '/login' && currentPath !== '/video-player') {
       window.location.href = '/login';
       return;
     }
