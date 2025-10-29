@@ -43,4 +43,5 @@ jobs:
           
       - name: Restart scentral service on VPS
         run: |
-          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "sudo systemctl restart scentral"
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "systemctl restart scentral" || \
+          echo "${{ secrets.VPS_SUDO_PASSWORD }}" | ssh -tt ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "sudo -S systemctl restart scentral"
