@@ -995,6 +995,9 @@ import { useToast } from 'vue-toast-notification'
 import 'vue-toast-notification/dist/theme-sugar.css'
 import VideoPreview from '~/components/VideoPreview.vue'
 
+// Get global MQTT instance
+const { $mqtt } = useNuxtApp()
+
 definePageMeta({
   middleware: 'admin'
 })
@@ -1677,6 +1680,27 @@ const saveAssignment = async () => {
     if (data.success) {
       $toast.success(`Assignment ${editingAssignment.value ? 'updated' : 'created'} successfully`, { duration: 5000, position: 'top-right' })
       await fetchSlotAssignments(currentSlot.value.id)
+      
+      // Publish MQTT message for slot assignment
+      try {
+        if ($mqtt && $mqtt.publish) {
+          const mqttMessage = {
+            action: editingAssignment.value ? 'updated' : 'assigned',
+            slotId: assignmentForm.value.slot_id,
+            videoId: assignmentForm.value.video_id,
+            machineId: assignmentForm.value.machine_id || null,
+            timestamp: new Date().toISOString(),
+            shouldPlayNow: true
+          }
+          
+          // Publish to slot assignment topic
+          $mqtt.publish('scentral/ads/slot/assignment', mqttMessage)
+          console.log('MQTT message published for assignment:', mqttMessage)
+        }
+      } catch (mqttError) {
+        console.warn('Failed to publish MQTT message for assignment:', mqttError)
+      }
+      
       closeAssignmentForm()
     } else {
       $toast.error(data.message || `Failed to ${editingAssignment.value ? 'update' : 'create'} assignment`, { duration: 5000, position: 'top-right' })
@@ -1703,6 +1727,26 @@ const deleteAssignment = async (assignment) => {
     if (data.success) {
       $toast.success('Assignment deleted successfully', { duration: 5000, position: 'top-right' })
       await fetchSlotAssignments(currentSlot.value.id)
+      
+      // Publish MQTT message for assignment deletion
+      try {
+        if ($mqtt && $mqtt.publish) {
+          const mqttMessage = {
+            action: 'removed',
+            slotId: assignment.slot_id,
+            videoId: assignment.video_id,
+            machineId: assignment.machine_id || null,
+            timestamp: new Date().toISOString(),
+            shouldPlayNow: false
+          }
+          
+          // Publish to slot assignment topic
+          $mqtt.publish('scentral/ads/slot/assignment', mqttMessage)
+          console.log('MQTT message published for assignment deletion:', mqttMessage)
+        }
+      } catch (mqttError) {
+        console.warn('Failed to publish MQTT message for assignment deletion:', mqttError)
+      }
     } else {
       $toast.error(data.message || 'Failed to delete assignment', { duration: 5000, position: 'top-right' })
     }
@@ -1820,6 +1864,27 @@ const saveVideoAssignment = async () => {
       $toast.success('Video assigned successfully', { duration: 5000, position: 'top-right' })
       await fetchSlotAssignments(currentSlot.value.id)
       await fetchSlots()
+      
+      // Publish MQTT message for slot assignment
+      try {
+        if ($mqtt && $mqtt.publish) {
+          const mqttMessage = {
+            action: 'assigned',
+            slotId: currentSlot.value.id,
+            videoId: videoAssignmentForm.value.video_id,
+            machineId: videoAssignmentForm.value.machine_id || null,
+            timestamp: new Date().toISOString(),
+            shouldPlayNow: true
+          }
+          
+          // Publish to slot assignment topic
+          $mqtt.publish('scentral/ads/slot/assignment', mqttMessage)
+          console.log('MQTT message published for slot assignment:', mqttMessage)
+        }
+      } catch (mqttError) {
+        console.warn('Failed to publish MQTT message for slot assignment:', mqttError)
+      }
+      
       closeVideoAssignmentModal()
     } else {
       // Handle specific error messages from the backend
@@ -2049,6 +2114,27 @@ const saveManualAssignment = async () => {
     if (data.success) {
       $toast.success('Video assigned successfully', { duration: 5000, position: 'top-right' })
       await fetchSlots()
+      
+      // Publish MQTT message for slot assignment
+      try {
+        if ($mqtt && $mqtt.publish) {
+          const mqttMessage = {
+            action: 'assigned',
+            slotId: manualAssignmentForm.value.slot_id,
+            videoId: manualAssignmentForm.value.video_id,
+            machineId: manualAssignmentForm.value.machine_id || null,
+            timestamp: new Date().toISOString(),
+            shouldPlayNow: true
+          }
+          
+          // Publish to slot assignment topic
+          $mqtt.publish('scentral/ads/slot/assignment', mqttMessage)
+          console.log('MQTT message published for manual slot assignment:', mqttMessage)
+        }
+      } catch (mqttError) {
+        console.warn('Failed to publish MQTT message for manual slot assignment:', mqttError)
+      }
+      
       closeManualAssignmentForm()
     } else {
       // Handle specific error messages from the backend

@@ -51,61 +51,12 @@
                 <td>{{ item.is_active ? 'Yes' : 'No' }}</td>
                 <td class="actions-cell">
                   <button @click="showTopUp(item)" class="btn btn-sm btn-success" title="Top Up Balance">
-                    <i class="fas fa-plus"></i> Top Up
+                    <i class="fas fa-plus"></i>
                   </button>
                 </td>
               </tr>
             </tbody>
           </table>
-        </div>
-      </div>
-
-      <!-- Top Up Balance Modal -->
-      <div v-if="isTopUpModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeTopUp">
-        <div class="modal-dialog modal-dialog-centered">
-          <div class="modal-content">
-            <div class="modal-header">
-              <h5 class="modal-title">Top Up Balance - {{ topUpBrandName }}</h5>
-              <button type="button" class="btn-close" @click="closeTopUp"></button>
-            </div>
-            <div class="modal-body">
-              <form @submit.prevent="submitTopUp" class="needs-validation" novalidate>
-                <div class="row">
-                  <div class="col-12 mb-3">
-                    <label class="form-label">Current Balance</label>
-                    <div class="form-control-plaintext">{{ formatCurrency(currentBalance) }}</div>
-                  </div>
-                  <div class="col-12 mb-3">
-                    <label class="form-label">Top Up Amount *</label>
-                    <div class="input-group">
-                      <span class="input-group-text">Rp</span>
-                      <input 
-                        type="text" 
-                        v-model="topUpAmountFormatted" 
-                        @input="handleAmountInput"
-                        class="form-control" 
-                        placeholder="Enter amount" 
-                        required 
-                      />
-                    </div>
-                    <div class="invalid-feedback">
-                      Please enter a valid amount.
-                    </div>
-                  </div>
-                  <div class="col-12 mb-3" v-if="topUpAmount">
-                    <label class="form-label">New Balance (Preview)</label>
-                    <div class="form-control-plaintext text-success font-weight-bold">
-                      {{ formatCurrency(currentBalance + parseFloat(topUpAmount || 0)) }}
-                    </div>
-                  </div>
-                </div>
-                <div class="modal-footer">
-                  <button type="button" class="btn btn-secondary" @click="closeTopUp">Cancel</button>
-                  <button type="submit" class="btn btn-success">Top Up Balance</button>
-                </div>
-              </form>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -153,6 +104,54 @@
       </div>
     </div>
   </section>
+  <!-- Top Up Balance Modal -->
+  <div v-if="isTopUpModal" class="modal fade show" style="display: block; background-color: rgba(0,0,0,0.5);" @click.self="closeTopUp">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Top Up Credit - {{ topUpBrandName }}</h5>
+          <button type="button" class="btn-close" @click="closeTopUp"></button>
+        </div>
+        <div class="modal-body">
+          <form @submit.prevent="submitTopUp" class="needs-validation" novalidate>
+            <div class="row">
+              <div class="col-12 mb-3">
+                <label class="form-label">Current Credit</label>
+                <div class="form-control-plaintext">{{ formatNumber(currentBalance) }}</div>
+              </div>
+              <div class="col-12 mb-3">
+                <label class="form-label">Top Up Amount *</label>
+                <div class="input-group">
+                  
+                  <input 
+                    type="text" 
+                    v-model="topUpAmountFormatted" 
+                    @input="handleAmountInput"
+                    class="form-control" 
+                    placeholder="Enter amount" 
+                    required 
+                  />
+                </div>
+                <div class="invalid-feedback">
+                  Please enter a valid amount.
+                </div>
+              </div>
+              <div class="col-12 mb-3" v-if="topUpAmount">
+                <label class="form-label">New Balance (Preview)</label>
+                <div class="form-control-plaintext text-success font-weight-bold">
+                  {{ formatCurrency(currentBalance + parseFloat(topUpAmount || 0)) }}
+                </div>
+              </div>
+            </div>
+            <div class="d-flex justify-content-end">
+              <button type="button" class="btn btn-secondary mr-2" @click="closeTopUp">Cancel</button>
+              <button type="submit" class="btn btn-success">Top Up Balance</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -200,6 +199,10 @@ const handleAmountInput = (event) => {
   const value = event.target.value.replace(/[^0-9]/g, '');
   topUpAmount.value = value;
   topUpAmountFormatted.value = value ? parseInt(value).toLocaleString('id-ID') : '';
+};
+
+const formatNumber = (num) => {
+  return new Intl.NumberFormat().format(num || 0);
 };
 
 const toggleAll = (event) => {

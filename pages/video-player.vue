@@ -715,7 +715,7 @@ const loadStartAndEndSlotTime = async () => {
       // Set isActiveWindow based on whether current time is in slot range
       isActiveWindow.value = isInSlotRange
       
-      log('info', `Current time: ${currentTime}, Slot range: ${startTimeSlot.value} - ${endTimeSlot.value}, In range: ${isInSlotRange}`)
+      // log('info', `Current time: ${currentTime}, Slot range: ${startTimeSlot.value} - ${endTimeSlot.value}, In range: ${isInSlotRange}`)
       
       // Start checking every second
       startSlotTimeMonitoring()
@@ -744,7 +744,7 @@ const startSlotTimeMonitoring = () => {
     // console.log('Checking slot time against current time...');
     const now = new Date()
     const currentTime = formatTime(now.getHours(), now.getMinutes())
-    console.log(`Current time: ${currentTime}`);
+    // console.log(`Current time: ${currentTime}`);
     
     // Refresh slot times from API every 5 minutes to get updates
     if (Date.now() - lastSlotRefreshTime > 5 * 60 * 1000) {
@@ -773,7 +773,7 @@ const startSlotTimeMonitoring = () => {
     }
     
     const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
-    console.log(`Slot range: ${startTimeSlot.value} - ${endTimeSlot.value}, In range: ${isInSlotRange}`);
+    // console.log(`Slot range: ${startTimeSlot.value} - ${endTimeSlot.value}, In range: ${isInSlotRange}`);
     
     // If current time is outside slot range
     if (!isInSlotRange) {
@@ -2257,6 +2257,7 @@ function handleMqttMessage(topic, message, data) {
 
 function setupMqttHandler() {
   try {
+    console.log('this is setup mqtt handler', $mqtt)
     // Register unified MQTT handler for all topics
     if ($mqtt && $mqtt.registerHandler) {
       // Use a unique handler ID to prevent duplicates
@@ -2346,6 +2347,9 @@ const init = async () => {
     
     // Load slot times and check if current time is in range
     const isInSlotRange = await loadStartAndEndSlotTime();
+
+    // Initialize MQTT connection using the global instance
+    setupMqttHandler();
     
     // If current time is not in slot range, show black screen and stop initialization
     if (isInSlotRange === false) {
@@ -2355,9 +2359,6 @@ const init = async () => {
       playbackStatus.value = 'Outside active hours'
       return
     }
-    
-    // Initialize MQTT connection using the global instance
-    setupMqttHandler()
     
     // Load initial manifest
     await loadManifest()

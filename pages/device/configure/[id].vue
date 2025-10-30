@@ -22,6 +22,7 @@ const showMachineModal = ref(false);
 const deviceList = ref([]);
 const selectedDeviceId = ref("");
 const loadingDevices = ref(false);
+const statusFilter = ref('active'); // New filter status variable
 let searchTimeout = null;
 
 const selectedProduct = computed(() => {
@@ -31,6 +32,18 @@ const selectedProduct = computed(() => {
     return ajaxProductList.value.find(p => p.id === Number(selectedProductId.value));
   }
   
+});
+
+// Computed property to filter products based on status
+const filteredProducts = computed(() => {
+  if (statusFilter.value === 'all') {
+    return assignedProducts.value;
+  } else if (statusFilter.value === 'active') {
+    return assignedProducts.value.filter(p => p.is_active);
+  } else if (statusFilter.value === 'inactive') {
+    return assignedProducts.value.filter(p => !p.is_active);
+  }
+  return assignedProducts.value;
 });
 
 const fetchAssignedProducts = async () => {
@@ -469,39 +482,54 @@ watch(() => dropdownOpen.value, (open) => {
           </div>
         </div>
         <div class="card-body">
-          <div class="form-group ">
-            <label for="product-select">Add Product</label>
-            <div class="input-group d-flex" style="width: 450px;">
-              <div class="custom-select2" style="width: calc(100% - 40px);" ref="dropdownRef">
-                <div class="select2-display form-control d-flex align-items-center justify-content-between" @click="toggleDropdown">
-                  <span v-if="selectedProduct">
-                    <img v-if="selectedProduct.image_url" :src="selectedProduct.image_url" alt="Product Image" style="height:32px;width:auto;margin-right:8px;border-radius:4px;vertical-align:middle;" />
-                    {{ selectedProduct.name }} <span v-if="selectedProduct.brand">({{ selectedProduct.brand.name }})</span>
-                  </span>
-                  <span v-else class="text-muted">Select product...</span>
-                  <i class="fas fa-caret-down ml-auto"></i>
-                </div>
-                <div v-if="dropdownOpen" class="select2-dropdown shadow" style="position:absolute;z-index:1050;width:100%;background:#fff;max-height:340px;overflow:auto;">
-                  <div class="p-2 border-bottom bg-light">
-                    <input type="text" v-model="productSearch" class="form-control" placeholder="Search product..." autofocus />
+          
+          <div class="row mt-3">
+            <div class="col-md-6">
+              <div class="form-group ">
+                <label for="product-select">Add Product</label>
+                <div class="input-group d-flex" style="width: 450px;">
+                  <div class="custom-select2" style="width: calc(100% - 40px);" ref="dropdownRef">
+                    <div class="select2-display form-control d-flex align-items-center justify-content-between" @click="toggleDropdown">
+                      <span v-if="selectedProduct">
+                        <img v-if="selectedProduct.image_url" :src="selectedProduct.image_url" alt="Product Image" style="height:32px;width:auto;margin-right:8px;border-radius:4px;vertical-align:middle;" />
+                        {{ selectedProduct.name }} <span v-if="selectedProduct.brand">({{ selectedProduct.brand.name }})</span>
+                      </span>
+                      <span v-else class="text-muted">Select product...</span>
+                      <i class="fas fa-caret-down ml-auto"></i>
+                    </div>
+                    <div v-if="dropdownOpen" class="select2-dropdown shadow" style="position:absolute;z-index:1050;width:100%;background:#fff;max-height:340px;overflow:auto;">
+                      <div class="p-2 border-bottom bg-light">
+                        <input type="text" v-model="productSearch" class="form-control" placeholder="Search product..." autofocus />
+                      </div>
+                      <div v-if="loadingProducts" class="dropdown-item text-muted"><i class="fas fa-spinner fa-spin"></i> Loading...</div>
+                      <div v-else-if="productSearch.length >= 2 && ( ajaxProductList === null || ajaxProductList.length === 0)" class="dropdown-item text-muted">No products found.</div>
+                      <div v-else-if="productSearch.length < 2" class="dropdown-item text-muted">Type at least 2 characters...</div>
+                      <a v-for="p in ajaxProductList" :key="p.id" class="dropdown-item d-flex align-items-center" href="#" @click.prevent="selectProduct(p)">
+                        <img v-if="p.image_url" :src="p.image_url" alt="Product Image" style="height:32px;width:auto;margin-right:8px;border-radius:4px;vertical-align:middle;" />
+                        <span>{{ p.name }} <span v-if="p.brand">({{ p.brand.name }})</span></span>
+                      </a>
+                    </div>
                   </div>
-                  <div v-if="loadingProducts" class="dropdown-item text-muted"><i class="fas fa-spinner fa-spin"></i> Loading...</div>
-                  <div v-else-if="productSearch.length >= 2 && ( ajaxProductList === null || ajaxProductList.length === 0)" class="dropdown-item text-muted">No products found.</div>
-                  <div v-else-if="productSearch.length < 2" class="dropdown-item text-muted">Type at least 2 characters...</div>
-                  <a v-for="p in ajaxProductList" :key="p.id" class="dropdown-item d-flex align-items-center" href="#" @click.prevent="selectProduct(p)">
-                    <img v-if="p.image_url" :src="p.image_url" alt="Product Image" style="height:32px;width:auto;margin-right:8px;border-radius:4px;vertical-align:middle;" />
-                    <span>{{ p.name }} <span v-if="p.brand">({{ p.brand.name }})</span></span>
-                  </a>
+                  <div class="input-group-append">
+                    <button class="btn btn-success" @click="addProduct" :disabled="!selectedProductId"><i class="fas fa-plus"></i></button>
+                  </div>
                 </div>
-              </div>
-              <div class="input-group-append">
-                <button class="btn btn-success" @click="addProduct" :disabled="!selectedProductId"><i class="fas fa-plus"></i></button>
+                <div class="mt-2">
+                  <button class="btn btn-info" @click="openMachineModal">
+                    <i class="fas fa-copy"></i> Copy from Existing Machine
+                  </button>
+                </div>
               </div>
             </div>
-            <div class="mt-2">
-              <button class="btn btn-info" @click="openMachineModal">
-                <i class="fas fa-copy"></i> Copy from Existing Machine
-              </button>
+            <div class="col-md-6">
+              <div class="form-group d-flex align-items-end" style="flex-direction: column; ">
+                <label for="status-filter">&nbsp;</label>
+                <select v-model="statusFilter" id="status-filter" class="form-control" style="width: 200px;">
+                  <option value="all">All</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
             </div>
           </div>
           <table class="table table-striped mt-4">
@@ -519,7 +547,7 @@ watch(() => dropdownOpen.value, (open) => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(item, i) in assignedProducts" :key="item.product_id" :class="{ 'table-secondary': !item.is_active }">
+              <tr v-for="(item, i) in filteredProducts" :key="item.product_id" :class="{ 'table-secondary': !item.is_active }">
                 <td>{{ i + 1 }}</td>
                 <td>
                   <img v-if="item.product && item.product.image_url" :src="item.product.image_url" alt="Product Image" style="height:48px;width:auto;border-radius:6px;box-shadow:0 2px 6px #0001;" :style="{ opacity: item.is_active ? 1 : 0.5 }" />
@@ -554,8 +582,12 @@ watch(() => dropdownOpen.value, (open) => {
                   </div>
                 </td>
               </tr>
-              <tr v-if="assignedProducts.length === 0">
-                <td colspan="8" class="text-center">No products assigned.</td>
+              <tr v-if="filteredProducts.length === 0">
+                <td colspan="8" class="text-center">
+                  {{ statusFilter === 'all' ? 'No products assigned.' :
+                     statusFilter === 'active' ? 'No active products found.' :
+                     'No inactive products found.' }}
+                </td>
               </tr>
             </tbody>
           </table>

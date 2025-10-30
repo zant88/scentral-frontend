@@ -160,8 +160,7 @@
               <thead>
                 <tr>
                   <th>Sales Code</th>
-                  <th>Date</th>
-                  <th>Time</th>
+                  <th>Date & Time</th>
                   <th>Device</th>
                   <th>Product</th>
                   <th>Category</th>
@@ -177,7 +176,7 @@
               </thead>
               <tbody>
                 <tr v-if="loading">
-                  <td colspan="14" class="text-center">
+                  <td colspan="13" class="text-center">
                     <div class="spinner-border spinner-border-sm" role="status">
                       <span class="sr-only">Loading...</span>
                     </div>
@@ -185,14 +184,13 @@
                   </td>
                 </tr>
                 <tr v-else-if="sales.length === 0">
-                  <td colspan="14" class="text-center text-muted">
+                  <td colspan="13" class="text-center text-muted">
                     No sales records found
                   </td>
                 </tr>
                 <tr v-else v-for="sale in sales" :key="sale.id">
                   <td>{{ sale.sales_code }}</td>
-                  <td>{{ formatDate(sale.created_at) }}</td>
-                  <td>{{ formatTime(sale.created_at) }}</td>
+                  <td>{{ formatDateTime(sale.created_at) }}</td>
                   <td>{{ sale.machine?.machine_code || sale.machine?.code || '' }}</td>
                   <td>{{ sale.product?.name || '' }}</td>
                   <td>{{ sale.product?.category?.name || '' }}</td>
@@ -439,6 +437,20 @@ const formatDate = (dateString) => {
 const formatTime = (dateString) => {
   if (!dateString) return ''
   return new Date(dateString).toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  })
+}
+
+const formatDateTime = (dateString) => {
+  if (!dateString) return ''
+  const date = new Date(dateString)
+  return date.toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
