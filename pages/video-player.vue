@@ -104,6 +104,88 @@ import { ref, reactive, onMounted, onBeforeUnmount, onBeforeMount } from 'vue'
 import VideoCachingProgress from '../components/VideoCachingProgress.vue'
 import Swal from 'sweetalert2'
 
+// Memory management utilities
+const activeBlobUrls = new Set()
+const activeTimeouts = new Set()
+const activeIntervals = new Set()
+let componentMounted = false
+
+// Centralized blob URL management
+const createManagedBlobUrl = (blob) => {
+  const url = URL.createObjectURL(blob)
+  activeBlobUrls.add(url)
+  return url
+}
+
+const revokeBlobUrl = (url) => {
+  if (activeBlobUrls.has(url)) {
+    URL.revokeObjectURL(url)
+    activeBlobUrls.delete(url)
+  }
+}
+
+const revokeAllBlobUrls = () => {
+  activeBlobUrls.forEach(url => URL.revokeObjectURL(url))
+  activeBlobUrls.clear()
+}
+
+// Centralized timeout management
+const createManagedTimeout = (callback, delay) => {
+  const timeoutId = setTimeout(() => {
+    activeTimeouts.delete(timeoutId)
+    callback()
+  }, delay)
+  activeTimeouts.add(timeoutId)
+  return timeoutId
+}
+
+const clearManagedTimeout = (timeoutId) => {
+  if (activeTimeouts.has(timeoutId)) {
+    clearTimeout(timeoutId)
+    activeTimeouts.delete(timeoutId)
+  }
+}
+
+const clearAllTimeouts = () => {
+  activeTimeouts.forEach(id => clearTimeout(id))
+  activeTimeouts.clear()
+}
+
+// Centralized interval management
+const createManagedInterval = (callback, delay) => {
+  const intervalId = setInterval(callback, delay)
+  activeIntervals.add(intervalId)
+  return intervalId
+}
+
+const clearManagedInterval = (intervalId) => {
+  if (activeIntervals.has(intervalId)) {
+    clearInterval(intervalId)
+    activeIntervals.delete(intervalId)
+  }
+}
+
+const clearAllIntervals = () => {
+  activeIntervals.forEach(id => clearInterval(id))
+  activeIntervals.clear()
+}
+
+// Memory monitoring
+const monitorMemory = () => {
+  if (performance.memory && debugMode.value) {
+    const memory = performance.memory
+    const usedMB = Math.round(memory.usedJSHeapSize / 1024 / 1024)
+    const totalMB = Math.round(memory.totalJSHeapSize / 1024 / 1024)
+    
+    log('info', `Memory: ${usedMB}MB / ${totalMB}MB`)
+    
+    // Alert if memory usage is high
+    if (usedMB > 100) {
+      log('warn', `High memory usage detected: ${usedMB}MB`)
+    }
+  }
+}
+
 // Layout definition
 definePageMeta({
   layout: 'video-player'
@@ -168,6 +250,7 @@ const balanceCheckInterval = ref(null)
 const activeWindowCheckInterval = ref(null)
 const slotTimeCheckInterval = ref(null) // New interval for checking slot time every second
 const isMqttHasConnected = ref(false);
+let mqttHandlerRegistered = false
 
 // Configuration functions
 const getMachineId = () => {
@@ -335,7 +418,7 @@ const isVideoAssignedToCurrentSlot = (video, currentSlotData) => {
 // Start monitoring for slot changes
 const startSlotMonitoring = () => {
   // Check for slot changes every 30 seconds for more responsive changes
-  slotCheckInterval.value = setInterval(() => {
+  slotCheckInterval.value = createManagedInterval(() => {
     const now = new Date()
     const currentSlotData = getCurrentTimeSlot()
     
@@ -363,41 +446,49 @@ const startSlotMonitoring = () => {
 }
 
 // Video event handlers
+const videoEventHandlers = {
+  loadstart: () => {
+    log('info', 'Video loading started')
+    playbackStatus.value = 'Loading...'
+  },
+  canplay: () => {
+    log('info', 'Video can play')
+    playbackStatus.value = 'Ready'
+  },
+  play: () => {
+    log('info', `Video playing: ${currentVideo.value?.title || 'Unknown'}`)
+    playbackStatus.value = 'Playing'
+  },
+  ended: () => {
+    log('info', 'Video ended')
+    handleVideoEnded()
+  },
+  error: (e) => {
+    log('error', `Video error: ${e.message || 'Unknown error'}`)
+    handleVideoError(e)
+  },
+  stalled: () => {
+    log('warn', 'Video playback stalled')
+  },
+  waiting: () => {
+    log('info', 'Video buffering...')
+    playbackStatus.value = 'Buffering...'
+  }
+}
+
 const setupVideoEventListeners = () => {
   const video = document.getElementById('videoPlayer')
   
-  video.addEventListener('loadstart', () => {
-    log('info', 'Video loading started')
-    playbackStatus.value = 'Loading...'
+  Object.entries(videoEventHandlers).forEach(([event, handler]) => {
+    video.addEventListener(event, handler)
   })
+}
 
-  video.addEventListener('canplay', () => {
-    log('info', 'Video can play')
-    playbackStatus.value = 'Ready'
-  })
-
-  video.addEventListener('play', () => {
-    log('info', `Video playing: ${currentVideo.value?.title || 'Unknown'}`)
-    playbackStatus.value = 'Playing'
-  })
-
-  video.addEventListener('ended', () => {
-    log('info', 'Video ended')
-    handleVideoEnded()
-  })
-
-  video.addEventListener('error', (e) => {
-    log('error', `Video error: ${e.message || 'Unknown error'}`)
-    handleVideoError(e)
-  })
-
-  video.addEventListener('stalled', () => {
-    log('warn', 'Video playback stalled')
-  })
-
-  video.addEventListener('waiting', () => {
-    log('info', 'Video buffering...')
-    playbackStatus.value = 'Buffering...'
+const removeVideoEventListeners = () => {
+  const video = document.getElementById('videoPlayer')
+  
+  Object.entries(videoEventHandlers).forEach(([event, handler]) => {
+    video.removeEventListener(event, handler)
   })
 }
 
@@ -493,7 +584,7 @@ const handleVideoAssignmentTrigger = async (trigger) => {
     // If the currently playing video was removed, switch to the next video
     if (trigger.action === 'removed' && currentVideo.value && currentVideo.value.id === trigger.videoId) {
       log('info', 'Currently playing video was removed, switching to next video')
-      setTimeout(() => {
+      createManagedTimeout(() => {
         playNextInLoop()
       }, 1000) // Give a moment before switching
     }
@@ -616,8 +707,15 @@ const playPerfumeVideosSequentially = async (perfumeAds) => {
       // Wait for video to finish playing by monitoring the video element
       await new Promise(resolve => {
         const videoElement = document.getElementById('videoPlayer')
+        const timeoutIds = []
         
         const checkVideoEnded = () => {
+          if (!componentMounted) {
+            // Component unmounted, resolve immediately
+            resolve()
+            return
+          }
+          
           if (videoElement.ended) {
             log('info', `Perfume video ${perfumeAd.title} ended naturally`)
             resolve()
@@ -625,17 +723,24 @@ const playPerfumeVideosSequentially = async (perfumeAds) => {
             log('info', `Perfume video ${perfumeAd.title} was paused, assuming it ended`)
             resolve()
           } else {
-            // Check every 500ms
-            setTimeout(checkVideoEnded, 500)
+            // Check every 500ms with managed timeout
+            const timeoutId = createManagedTimeout(checkVideoEnded, 500)
+            timeoutIds.push(timeoutId)
           }
         }
         
         // Start checking after a short delay to ensure video starts playing
-        setTimeout(checkVideoEnded, 500)
+        const initialTimeoutId = createManagedTimeout(checkVideoEnded, 500)
+        timeoutIds.push(initialTimeoutId)
+        
+        // Store timeout IDs for cleanup
+        resolve.cleanup = () => {
+          timeoutIds.forEach(id => clearManagedTimeout(id))
+        }
       })
       
       // Small gap between perfume videos
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      await new Promise(resolve => createManagedTimeout(resolve, 1000))
     }
     
     // After all perfume videos are played, resume the last video from beginning
@@ -650,7 +755,7 @@ const playPerfumeVideosSequentially = async (perfumeAds) => {
       await playVideo(lastPlayingVideo.value, lastAdType.value, lastSlot.value)
       
       // After the resumed video ends, continue with the next video in the loop
-      setTimeout(() => {
+      createManagedTimeout(() => {
         currentLoopIndex.value = (lastLoopIndex.value + 1) % playbackLoop.value.length
         playNextInLoop()
       }, 100)
@@ -740,7 +845,7 @@ const startSlotTimeMonitoring = () => {
   let lastSlotRefreshTime = Date.now()
   
   // Check every second
-  slotTimeCheckInterval.value = setInterval(async () => {
+  slotTimeCheckInterval.value = createManagedInterval(async () => {
     // console.log('Checking slot time against current time...');
     const now = new Date()
     const currentTime = formatTime(now.getHours(), now.getMinutes())
@@ -909,7 +1014,7 @@ const initializeFullPlaybackSystem = async () => {
     }
     
     // Start monitoring intervals
-    balanceCheckInterval.value = setInterval(loadBrandBalances, 5 * 60 * 1000)
+    balanceCheckInterval.value = createManagedInterval(loadBrandBalances, 5 * 60 * 1000)
     startSlotMonitoring()
     
   } catch (error) {
@@ -1612,7 +1717,7 @@ const checkActiveWindow = () => {
         isBlackScreenActive.value = false
         hideBlackScreen()
         // Force restart of playback system
-        setTimeout(() => {
+        createManagedTimeout(() => {
           restartPlaybackSystem()
         }, 1000)
       }
@@ -1668,7 +1773,7 @@ const restartPlaybackSystem = async () => {
     }
     
     // Restart monitoring intervals
-    balanceCheckInterval.value = setInterval(loadBrandBalances, 5 * 60 * 1000)
+    balanceCheckInterval.value = createManagedInterval(loadBrandBalances, 5 * 60 * 1000)
     startSlotMonitoring()
     
   } catch (error) {
@@ -1804,7 +1909,7 @@ const playVideo = async (video, adTypeParam, slot = null) => {
     let videoUrl
     
     if (cachedVideo) {
-      videoUrl = URL.createObjectURL(cachedVideo.blob)
+      videoUrl = createManagedBlobUrl(cachedVideo.blob)
       log('info', `Playing cached video: ${video.title}`)
     } else {
       videoUrl = video.file_path
@@ -1904,7 +2009,7 @@ const handleVideoEnded = async () => {
   
   // Clean up object URL if created
   if (videoElement.src.startsWith('blob:')) {
-    URL.revokeObjectURL(videoElement.src)
+    revokeBlobUrl(videoElement.src)
   }
   
   // Continue playback loop
@@ -1937,7 +2042,7 @@ const handleVideoError = async (error) => {
     retryCount.value++
     log('info', `Retrying video playback (${retryCount.value}/${maxRetries.value})`)
     
-    setTimeout(() => {
+    createManagedTimeout(() => {
       playVideo(currentVideo.value, isPerfumeAdPlaying.value ? 'perfume' : 'general', currentSlot.value)
     }, 2000 * retryCount.value) // Exponential backoff
     
@@ -1946,7 +2051,7 @@ const handleVideoError = async (error) => {
     retryCount.value = 0
     isPerfumeAdPlaying.value = false
     
-    setTimeout(() => {
+    createManagedTimeout(() => {
       playDefaultVideo()
     }, 1000)
   }
@@ -1975,7 +2080,7 @@ const showBlackScreen = (isPowerSaving = false) => {
     playbackStatus.value = 'No content'
     
     // Try again after 30 seconds for regular black screen
-    setTimeout(() => {
+    createManagedTimeout(() => {
       if (!isPowerSaving) {
         playNextInLoop()
       }
@@ -2076,7 +2181,7 @@ const updatePerfumeTimeToday = () => {
   }
   
   // Update every minute
-  setTimeout(() => updatePerfumeTimeToday(), 60000)
+  createManagedTimeout(() => updatePerfumeTimeToday(), 60000)
 }
 
 // Utility functions
@@ -2119,7 +2224,7 @@ const handleCachingComplete = () => {
   showCachingProgress.value = false
   
   // Wait a bit for UI to update before starting playback
-  setTimeout(() => {
+  createManagedTimeout(() => {
     startPlaybackLoop()
   }, 500)
 }
@@ -2248,6 +2353,8 @@ function handleMqttMessage(topic, message, data) {
       }
     } else if (topic === "scentral/advertising/state") {
       handleAdvertisingState(data)
+    } else if (topic === "scentral/ads/balance/update") {
+      loadNewVideos()
     }
   } catch (error) {
     log('error', `Failed to parse MQTT message: ${error.message}`)
@@ -2394,26 +2501,33 @@ onBeforeMount(() => {
 })
 
 onMounted(() => {
+  // Mark component as mounted
+  componentMounted = true
+  
+  // Start memory monitoring if debug mode is enabled
+  if (debugMode.value) {
+    createManagedInterval(() => {
+      monitorMemory()
+    }, 30000) // Monitor every 30 seconds
+  }
+  
   init()
 })
 
 onBeforeUnmount(() => {
-  // Cleanup all intervals
-  if (slotCheckInterval.value) {
-    clearInterval(slotCheckInterval.value)
-  }
-  if (balanceCheckInterval.value) {
-    clearInterval(balanceCheckInterval.value)
-  }
-  if (activeWindowCheckInterval.value) {
-    clearInterval(activeWindowCheckInterval.value)
-  }
-  if (slotTimeCheckInterval.value) {
-    clearInterval(slotTimeCheckInterval.value)
-  }
+  // Mark component as unmounted
+  componentMounted = false
+  
+  // Cleanup all managed resources
+  clearAllIntervals()
+  clearAllTimeouts()
+  revokeAllBlobUrls()
   
   // Cleanup MQTT handler
   cleanupMqttHandler()
+  
+  // Remove video event listeners
+  removeVideoEventListeners()
   
   // Remove fullscreen event listeners
   document.removeEventListener('fullscreenchange', handleFullscreenChange);
