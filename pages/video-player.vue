@@ -225,6 +225,7 @@ const showCachingProgress = ref(false)
 const videosToCache = ref([])
 const startTimeSlot = ref(null)
 const endTimeSlot = ref(null)
+const isPerfumeAdsPlaying = ref(false)
 const cachingProgress = ref({
   percentage: 0,
   cachedCount: 0,
@@ -609,71 +610,74 @@ const handleVideoAssignmentTrigger = async (trigger) => {
 
 // Handle advertising state messages from MQTT
 const handleAdvertisingState = async (data) => {
-  try {
-    log('info', `Advertising state message received: ${JSON.stringify(data)}`)
-    
-    // Check if data has brand information
-    if (data && data.brand_id !== undefined) {
-      if (data.brand_id === -1) {
-        // Continue with last video (not reset from beginning)
-        log('info', 'Brand is -1, continuing with last video')
-        
-        // Stop current video immediately
-        const videoElement = document.getElementById('videoPlayer')
-        if (videoElement && !videoElement.paused) {
-          videoElement.pause()
-          videoElement.currentTime = 0
-        }
-        
-        isPerfumeAdPlaying.value = false
-        
-        // Continue with last video if available, otherwise play next in loop
-        if (lastPlayingVideo.value) {
-          log('info', `Resuming last video: ${lastPlayingVideo.value.title} in slot ${lastSlot.value?.name || 'None'} with ad_type ${lastAdType.value}`)
-          await playVideo(lastPlayingVideo.value, lastAdType.value, lastSlot.value)
-        } else {
-          log('info', 'No last video recorded, playing next in loop')
-          playNextInLoop()
-        }
-      } else {
-        // Play perfume videos for the specified brand ID
-        log('info', `Brand ID ${data.brand_id} received, playing perfume videos for this brand`)
-        
-        // Remember the current video before interruption
-        if (currentVideo.value) {
-          lastPlayingVideo.value = currentVideo.value
-          lastLoopIndex.value = currentLoopIndex.value
-          lastSlot.value = currentSlot.value
-          lastAdType.value = adType.value
-          log('info', `Remembered last video: ${currentVideo.value.title} at index ${currentLoopIndex.value} in slot ${currentSlot.value?.name || 'None'} with ad_type ${adType.value}`)
-        }
-        
-        // Stop current video immediately
-        const videoElement = document.getElementById('videoPlayer')
-        if (videoElement && !videoElement.paused) {
-          videoElement.pause()
-          videoElement.currentTime = 0
-        }
-        
-        // Find perfume ads for this brand
-        const brandPerfumeAds = manifest.value.perfume_ads.filter(ad => ad.brand_id === parseInt(data.brand_id))
-        
-        if (brandPerfumeAds.length > 0) {
-          // Play all perfume videos for this brand sequentially
-          await playPerfumeVideosSequentially(brandPerfumeAds)
-        } else {
-          log('warn', `No perfume ads found for brand ${data.brand_id}, continuing with regular playback`)
+  if (!isPerfumeAdPlaying.value) {
+    try {
+      log('info', `Advertising state message received: ${JSON.stringify(data)}`)
+      
+      // Check if data has brand information
+      if (data && data.brand_id !== undefined) {
+        if (data.brand_id === -1) {
+          // Continue with last video (not reset from beginning)
+          log('info', 'Brand is -1, continuing with last video')
+          
+          // Stop current video immediately
+          const videoElement = document.getElementById('videoPlayer')
+          if (videoElement && !videoElement.paused) {
+            videoElement.pause()
+            videoElement.currentTime = 0
+          }
+          
           isPerfumeAdPlaying.value = false
-          playNextInLoop()
+          
+          // Continue with last video if available, otherwise play next in loop
+          if (lastPlayingVideo.value) {
+            log('info', `Resuming last video: ${lastPlayingVideo.value.title} in slot ${lastSlot.value?.name || 'None'} with ad_type ${lastAdType.value}`)
+            i
+            await playVideo(lastPlayingVideo.value, lastAdType.value, lastSlot.value)
+          } else {
+            log('info', 'No last video recorded, playing next in loop')
+            playNextInLoop()
+          }
+        } else {
+          // Play perfume videos for the specified brand ID
+          log('info', `Brand ID ${data.brand_id} received, playing perfume videos for this brand`)
+          
+          // Remember the current video before interruption
+          if (currentVideo.value) {
+            lastPlayingVideo.value = currentVideo.value
+            lastLoopIndex.value = currentLoopIndex.value
+            lastSlot.value = currentSlot.value
+            lastAdType.value = adType.value
+            log('info', `Remembered last video: ${currentVideo.value.title} at index ${currentLoopIndex.value} in slot ${currentSlot.value?.name || 'None'} with ad_type ${adType.value}`)
+          }
+          
+          // Stop current video immediately
+          const videoElement = document.getElementById('videoPlayer')
+          if (videoElement && !videoElement.paused) {
+            videoElement.pause()
+            videoElement.currentTime = 0
+          }
+          
+          // Find perfume ads for this brand
+          const brandPerfumeAds = manifest.value.perfume_ads.filter(ad => ad.brand_id === parseInt(data.brand_id))
+          
+          if (brandPerfumeAds.length > 0) {
+            // Play all perfume videos for this brand sequentially
+            await playPerfumeVideosSequentially(brandPerfumeAds)
+          } else {
+            log('warn', `No perfume ads found for brand ${data.brand_id}, continuing with regular playback`)
+            isPerfumeAdPlaying.value = false
+            playNextInLoop()
+          }
         }
       }
+      
+    } catch (error) {
+      log('error', `Failed to handle advertising state: ${error.message}`)
+      isPerfumeAdPlaying.value = false
+      // Continue with regular playback
+      playNextInLoop()
     }
-    
-  } catch (error) {
-    log('error', `Failed to handle advertising state: ${error.message}`)
-    isPerfumeAdPlaying.value = false
-    // Continue with regular playback
-    playNextInLoop()
   }
 }
 
