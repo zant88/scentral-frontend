@@ -37,6 +37,7 @@ export default defineNuxtPlugin(() => {
     console.log("✅ Connected via WebSocket");
     client.subscribe("scentral/advertising/state");
     client.subscribe("scentral/ads/slot/assignment");
+    client.subscribe("scentral/ads/balance/update");
   });
 
   // Main message handler that delegates to custom handlers or default

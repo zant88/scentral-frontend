@@ -90,7 +90,7 @@
                 <input
                   type="text"
                   class="form-control filter-input"
-                  placeholder="Search by sales code, device, product, or brand..."
+                  placeholder="Search by sales code, device, product, brand, or category..."
                   v-model="filters.q"
                   @input="debounceSearch"
                 />
@@ -113,6 +113,7 @@
                   <option value="machine_code">Device</option>
                   <option value="product_name">Product</option>
                   <option value="brand_name">Brand</option>
+                  <option value="category_name">Category</option>
                 </select>
               </div>
             </div>

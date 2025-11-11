@@ -51,6 +51,90 @@
         </div>
       </div>
 
+      <!-- Zenziva WA Business Balance -->
+      <div class="row">
+        <div class="col-lg-12 col-md-12 col-12">
+          <div class="card">
+            <div class="card-header">
+              <h4>
+                <i class="fas fa-whatsapp mr-2 text-success"></i>
+                Zenziva WA Business Balance
+              </h4>
+              <div class="card-header-action">
+                <button
+                  class="btn btn-sm btn-outline-primary"
+                  @click="refreshZenzivaBalance"
+                  :disabled="loadingZenziva"
+                >
+                  <span v-if="loadingZenziva" class="spinner-border spinner-border-sm mr-1"></span>
+                  <i class="fas fa-sync-alt mr-1"></i>
+                  {{ loadingZenziva ? 'Checking...' : 'Refresh' }}
+                </button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="row" v-if="zenzivaBalance.balance !== null">
+                <div class="col-lg-4 col-md-6">
+                  <div class="card card-statistic-1">
+                    <div class="card-icon bg-success"><i class="fas fa-coins"></i></div>
+                    <div class="card-wrap">
+                      <div class="card-header"><h4>Current Balance</h4></div>
+                      <div class="card-body">Rp {{ zenzivaBalance.balanceText || formatNumber(zenzivaBalance.balance) }}</div>
+                      <div class="card-footer small text-muted">
+                        Status: {{ zenzivaBalance.statusText || 'Success' }} | Last checked: {{ zenzivaBalance.lastChecked }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-lg-4 col-md-6">
+                  <div class="card card-statistic-1">
+                    <div class="card-icon bg-info"><i class="fas fa-calendar-alt"></i></div>
+                    <div class="card-wrap">
+                      <div class="card-header"><h4>Expiry Date</h4></div>
+                      <div class="card-body">{{ zenzivaBalance.expiryDate || 'N/A' }}</div>
+                      <div class="card-footer small text-muted">
+                        Service: Zenziva WA Business
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-lg-4 col-md-6">
+                  <div class="card card-statistic-1">
+                    <div class="card-icon" :class="zenzivaBalance.balance > 10000 ? 'bg-success' : zenzivaBalance.balance > 5000 ? 'bg-warning' : 'bg-danger'">
+                      <i class="fas fa-chart-line"></i>
+                    </div>
+                    <div class="card-wrap">
+                      <div class="card-header"><h4>Status</h4></div>
+                      <div class="card-body">
+                        <span class="badge" :class="zenzivaBalance.balance > 10000 ? 'badge-success' : zenzivaBalance.balance > 5000 ? 'badge-warning' : 'badge-danger'">
+                          {{ zenzivaBalance.balance > 10000 ? 'Healthy' : zenzivaBalance.balance > 5000 ? 'Low' : 'Critical' }}
+                        </span>
+                      </div>
+                      <div class="card-footer small text-muted">
+                        Threshold: Rp 10,000
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-else-if="loadingZenziva" class="text-center py-4">
+                <div class="spinner-border spinner-border-sm mr-2" role="status"></div>
+                Loading Zenziva balance...
+              </div>
+              <div v-else class="text-center py-4">
+                <div class="text-danger">
+                  <i class="fas fa-exclamation-triangle mr-2"></i>
+                  Failed to load Zenziva balance
+                </div>
+                <button class="btn btn-sm btn-primary mt-2" @click="refreshZenzivaBalance">
+                  Try Again
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- APK Release Statistics -->
       <div class="row">
         <div class="col-lg-3 col-md-6 col-sm-6 col-12">
@@ -380,6 +464,18 @@ const playbackData = ref([])
 const adTypeData = ref([])
 const apkDistributionData = ref([])
 
+// Zenziva balance data
+const zenzivaBalance = ref({
+  balance: null,
+  balanceText: null,
+  expiryDate: null,
+  status: null,
+  statusText: null,
+  lastChecked: null,
+  currency: 'IDR'
+})
+const loadingZenziva = ref(false)
+
 // Chart instances
 let playbackChart = null
 let adTypeChart = null
@@ -456,6 +552,9 @@ const fetchDashboardData = async () => {
   } catch (error) {
     console.error('Error fetching dashboard data:', error)
   }
+
+  // Fetch Zenziva balance
+  await fetchZenzivaBalance()
 }
 
 // Initialize charts
@@ -539,6 +638,50 @@ const formatDuration = (seconds) => {
   const mins = Math.floor(seconds / 60)
   const secs = seconds % 60
   return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+const formatNumber = (num) => {
+  if (!num) return '0'
+  return parseInt(num).toLocaleString('id-ID')
+}
+
+// Zenziva balance functions
+const fetchZenzivaBalance = async () => {
+  try {
+    const response = await fetchWithAuth(`${apiUrl}/api/balance/zenziva`)
+    const data = await response.json()
+
+    if (data.success) {
+      zenzivaBalance.value = {
+        balance: data.data.balance,
+        balanceText: data.data.balance_text,
+        expiryDate: data.data.expiry_date || 'N/A',
+        status: data.data.status,
+        statusText: data.data.status_text,
+        lastChecked: new Date().toLocaleString('id-ID', {
+          timeZone: 'Asia/Jakarta',
+          dateStyle: 'medium',
+          timeStyle: 'short'
+        }),
+        currency: data.data.currency
+      }
+    } else {
+      console.error('Failed to fetch Zenziva balance:', data.message)
+      zenzivaBalance.value.balance = null
+    }
+  } catch (error) {
+    console.error('Error fetching Zenziva balance:', error)
+    zenzivaBalance.value.balance = null
+  }
+}
+
+const refreshZenzivaBalance = async () => {
+  loadingZenziva.value = true
+  try {
+    await fetchZenzivaBalance()
+  } finally {
+    loadingZenziva.value = false
+  }
 }
 
 const formatDate = (dateString) => {

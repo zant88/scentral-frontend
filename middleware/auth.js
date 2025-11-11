@@ -1,11 +1,12 @@
-// middleware/auth.global.js
+// middleware/auth.js
 import { isLoggedIn } from '~/utils/auth'
 
 export default defineNuxtRouteMiddleware((to, from) => {
-  // Skip auth check for login page
-  if (to.path === '/login') return
+  // Only run on client side
+  if (process.server) return
   
-  if (process.client && !isLoggedIn()) {
+  // Check if user is logged in
+  if (!isLoggedIn()) {
     return navigateTo('/login')
   }
 })

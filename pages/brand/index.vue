@@ -168,6 +168,12 @@ import 'vue-toast-notification/dist/theme-sugar.css';
 
 const config = useRuntimeConfig();
 const apiUrl = `${config.public.apiBase}`;
+const { $mqtt } = useNuxtApp();
+
+// Debug MQTT client availability
+console.log('MQTT client in brand page:', $mqtt);
+console.log('MQTT client publish method:', $mqtt?.publish);
+console.log('MQTT client connected status:', $mqtt?.connected);
 const checkedItems = ref([]);
 const brandList = ref([]);
 const isCreateUpdate = ref(false);
@@ -396,7 +402,53 @@ const submitTopUp = async () => {
     });
     
     const data = await response.json();
+    console.log('Top-up response data:', data);
     if (data.success) {
+      // Publish MQTT message for credit update
+      try {
+        console.log('Attempting to publish MQTT message...')
+        console.log('MQTT object available:', !!$mqtt)
+        
+        // Check if MQTT client has the required methods
+        const canPublish = $mqtt && (
+          ($mqtt.publish && typeof $mqtt.publish === 'function') ||
+          ($mqtt.client && $mqtt.client.publish && typeof $mqtt.client.publish === 'function')
+        )
+        
+        console.log('MQTT can publish:', canPublish)
+        console.log('MQTT client connected:', $mqtt?.connected)
+        console.log('MQTT client connected (direct):', $mqtt?.client?.connected)
+        
+        if (canPublish) {
+          const mqttMessage = {
+            brand_id: topUpBrandID.value,
+            brand_name: topUpBrandName.value,
+            amount_added: parseFloat(topUpAmount.value),
+            new_balance: data.new_balance,
+            previous_balance: currentBalance.value,
+            timestamp: new Date().toISOString()
+          }
+          
+          console.log('Publishing MQTT message:', mqttMessage)
+          
+          // Try enhanced client publish first, then direct client publish
+          if ($mqtt.publish && typeof $mqtt.publish === 'function') {
+            $mqtt.publish('scentral/ads/credit/update', mqttMessage)
+            console.log('MQTT message published via enhanced client')
+          } else if ($mqtt.client && $mqtt.client.publish && typeof $mqtt.client.publish === 'function') {
+            $mqtt.client.publish('scentral/ads/credit/update', JSON.stringify(mqttMessage))
+            console.log('MQTT message published via direct client')
+          } else {
+            console.warn('No suitable MQTT publish method found')
+          }
+        } else {
+          console.warn('MQTT client not ready for publishing')
+        }
+      } catch (mqttError) {
+        console.warn('Failed to publish MQTT message for credit update:', mqttError)
+        console.warn('Error stack:', mqttError.stack)
+      }
+      
       $toast.success(`Balance topped up successfully! New balance: ${formatCurrency(data.new_balance)}`, { duration: 5000, position: 'top-right' });
       closeTopUp();
       getBrandList(); // Refresh the list to show updated balance

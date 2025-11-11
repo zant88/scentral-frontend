@@ -5,8 +5,8 @@ export default defineNuxtRouteMiddleware((to, from) => {
   // Only run on client side
   if (process.server) return
   
-  // Skip middleware for login page to prevent interference
-  if (to.path === '/login') return
+  // Skip middleware for login page and video player page to prevent interference
+  if (to.path === '/login' || to.path === '/video-player') return
   
   // Skip if not logged in (auth middleware will handle this)
   if (!isLoggedIn()) return
