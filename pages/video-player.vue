@@ -794,13 +794,21 @@ const playPerfumeVideosSequentially = async (perfumeAds) => {
       log('info', `Resuming last video from beginning: ${lastPlayingVideo.value.title} in slot ${lastSlot.value?.name || 'None'} with ad_type ${lastAdType.value}`)
       // Reset the loop index to where we were before
       currentLoopIndex.value = lastLoopIndex.value
+
+      // Clear any existing playback to prevent double playback
+      const videoElement = document.getElementById('videoPlayer')
+      if (videoElement && !videoElement.paused) {
+        videoElement.pause()
+        videoElement.currentTime = 0
+      }
+
       await playVideo(lastPlayingVideo.value, lastAdType.value, lastSlot.value)
 
-      // After the resumed video ends, continue with the next video in the loop
-      createManagedTimeout(() => {
-        currentLoopIndex.value = (lastLoopIndex.value + 1) % playbackLoop.value.length
-        playNextInLoop()
-      }, 100)
+      // Clear the last video state to prevent future conflicts
+      lastPlayingVideo.value = null
+      lastSlot.value = null
+      lastAdType.value = null
+      // Keep lastLoopIndex.value for the next video handling
     } else {
       // Fallback to regular playback if no last video is recorded
       log('info', 'No last video recorded, continuing with regular playback')
@@ -2060,37 +2068,44 @@ const handleVideoEnded = async () => {
   if (!currentVideo.value) {
     return
   }
-  
+
   const videoElement = document.getElementById('videoPlayer')
-  const duration = Math.round(videoElement.duration)
   const actualDuration = Math.round(videoElement.currentTime)
-  
+
   // Log playback completion
   console.log('this is current slot in ended', currentSlot.value)
   await logPlaybackEvent({
     videoId: currentVideo.value.id,
     brandId: currentVideo.value.brand_id,
-    adType: currentVideo.value === manifest.value.default_video ? 'default' : 
+    adType: currentVideo.value === manifest.value.default_video ? 'default' :
             (isPerfumeAdPlaying.value ? 'perfume' : 'general'),
     slotId: currentSlot.value ? currentSlot.value.id : null,
     status: 'completed',
     duration: actualDuration,
     cost: currentVideo.value.cost_per_play || 0
   })
-  
+
   // Update perfume time if applicable
   if (isPerfumeAdPlaying.value) {
     perfumeTimeToday.value += actualDuration
     isPerfumeAdPlaying.value = false
+    // Don't continue the loop here - let playPerfumeVideosSequentially handle the flow
+    return
   }
-  
+
   // Clean up object URL if created
   if (videoElement.src.startsWith('blob:')) {
     revokeBlobUrl(videoElement.src)
   }
-  
+
   // Continue playback loop
   setTimeout(() => {
+    // Check if we just resumed from perfume ads and need to increment loop index
+    if (lastLoopIndex.value !== 0 && currentLoopIndex.value === lastLoopIndex.value) {
+      // We just finished the resumed video, move to next one
+      currentLoopIndex.value = (currentLoopIndex.value + 1) % playbackLoop.value.length
+      lastLoopIndex.value = 0 // Reset the marker
+    }
     playNextInLoop()
   }, 1000) // 1 second gap between videos
 }
