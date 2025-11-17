@@ -243,6 +243,21 @@ const lastLoopIndex = ref(0)
 const lastSlot = ref(null)
 const lastAdType = ref(null)
 
+// Simple perfume ad state management
+const PERFUME_AD_STATES = {
+  IDLE: 'idle',
+  PREPARING: 'preparing',
+  PLAYING: 'playing'
+}
+const perfumeAdState = ref(PERFUME_AD_STATES.IDLE)
+
+// Enhanced state check for processing perfume ads
+const isProcessingPerfumeAd = computed(() => {
+  return isPerfumeAdPlaying.value ||
+         perfumeAdState.value === PERFUME_AD_STATES.PREPARING ||
+         perfumeAdState.value === PERFUME_AD_STATES.PLAYING
+})
+
 // New state for enhanced functionality
 const isBlackScreenActive = ref(false)
 const isActiveWindow = ref(false) // 08:00-23:00 active window
@@ -550,19 +565,19 @@ const handlePerfumeAdTrigger = async (trigger) => {
   if (trigger.machineId && trigger.machineId !== machineId.value) {
     return // Not for this machine
   }
-  
+
   if (trigger.action === 'cancel') {
     log('info', 'Perfume ad cancelled')
     return
   }
-  
-  log('info', `Perfume ad triggered for brand: ${trigger.brandName || trigger.brandId}`)
-  
-  if (isPerfumeAdPlaying.value) {
-    log('warn', 'Perfume ad already playing, ignoring trigger')
+
+  // ENHANCED: Ignore if already processing any perfume ad
+  if (isProcessingPerfumeAd.value) {
+    log('info', `Ignoring perfume ad trigger - already processing: ${trigger.brandName || trigger.brandId}`)
     return
   }
-  
+
+  log('info', `Processing perfume ad trigger: ${trigger.brandName || trigger.brandId}`)
   await playPerfumeAd(trigger.brandId)
 }
 
@@ -610,74 +625,87 @@ const handleVideoAssignmentTrigger = async (trigger) => {
 
 // Handle advertising state messages from MQTT
 const handleAdvertisingState = async (data) => {
-  if (!isPerfumeAdPlaying.value) {
-    try {
-      log('info', `Advertising state message received: ${JSON.stringify(data)}`)
-      
-      // Check if data has brand information
-      if (data && data.brand_id !== undefined) {
-        if (data.brand_id === -1) {
-          // Continue with last video (not reset from beginning)
-          log('info', 'Brand is -1, continuing with last video')
-          
-          // Stop current video immediately
-          const videoElement = document.getElementById('videoPlayer')
-          if (videoElement && !videoElement.paused) {
-            videoElement.pause()
-            videoElement.currentTime = 0
-          }
-          
-          isPerfumeAdPlaying.value = false
-          
-          // Continue with last video if available, otherwise play next in loop
-          if (lastPlayingVideo.value) {
-            log('info', `Resuming last video: ${lastPlayingVideo.value.title} in slot ${lastSlot.value?.name || 'None'} with ad_type ${lastAdType.value}`)
-            i
-            await playVideo(lastPlayingVideo.value, lastAdType.value, lastSlot.value)
-          } else {
-            log('info', 'No last video recorded, playing next in loop')
-            playNextInLoop()
-          }
+  // ENHANCED: More comprehensive state check
+  if (isProcessingPerfumeAd.value) {
+    log('info', 'Ignoring advertising state - perfume ad already in progress')
+    return
+  }
+
+  try {
+    log('info', `Advertising state message received: ${JSON.stringify(data)}`)
+
+    // Check if data has brand information
+    if (data && data.brand_id !== undefined) {
+      if (data.brand_id === -1) {
+        // Continue with last video (not reset from beginning)
+        log('info', 'Brand is -1, continuing with last video')
+
+        // Stop current video immediately
+        const videoElement = document.getElementById('videoPlayer')
+        if (videoElement && !videoElement.paused) {
+          videoElement.pause()
+          videoElement.currentTime = 0
+        }
+
+        isPerfumeAdPlaying.value = false
+        perfumeAdState.value = PERFUME_AD_STATES.IDLE
+
+        // Continue with last video if available, otherwise play next in loop
+        if (lastPlayingVideo.value) {
+          log('info', `Resuming last video: ${lastPlayingVideo.value.title} in slot ${lastSlot.value?.name || 'None'} with ad_type ${lastAdType.value}`)
+          await playVideo(lastPlayingVideo.value, lastAdType.value, lastSlot.value)
         } else {
-          // Play perfume videos for the specified brand ID
-          log('info', `Brand ID ${data.brand_id} received, playing perfume videos for this brand`)
-          
-          // Remember the current video before interruption
-          if (currentVideo.value) {
-            lastPlayingVideo.value = currentVideo.value
-            lastLoopIndex.value = currentLoopIndex.value
-            lastSlot.value = currentSlot.value
-            lastAdType.value = adType.value
-            log('info', `Remembered last video: ${currentVideo.value.title} at index ${currentLoopIndex.value} in slot ${currentSlot.value?.name || 'None'} with ad_type ${adType.value}`)
-          }
-          
-          // Stop current video immediately
-          const videoElement = document.getElementById('videoPlayer')
-          if (videoElement && !videoElement.paused) {
-            videoElement.pause()
-            videoElement.currentTime = 0
-          }
-          
-          // Find perfume ads for this brand
-          const brandPerfumeAds = manifest.value.perfume_ads.filter(ad => ad.brand_id === parseInt(data.brand_id))
-          
-          if (brandPerfumeAds.length > 0) {
-            // Play all perfume videos for this brand sequentially
-            await playPerfumeVideosSequentially(brandPerfumeAds)
-          } else {
-            log('warn', `No perfume ads found for brand ${data.brand_id}, continuing with regular playback`)
-            isPerfumeAdPlaying.value = false
-            playNextInLoop()
-          }
+          log('info', 'No last video recorded, playing next in loop')
+          playNextInLoop()
+        }
+      } else {
+        // Set preparing state BEFORE stopping current video
+        perfumeAdState.value = PERFUME_AD_STATES.PREPARING
+
+        // Play perfume videos for the specified brand ID
+        log('info', `Brand ID ${data.brand_id} received, playing perfume videos for this brand`)
+
+        // Remember the current video before interruption
+        if (currentVideo.value) {
+          lastPlayingVideo.value = currentVideo.value
+          lastLoopIndex.value = currentLoopIndex.value
+          lastSlot.value = currentSlot.value
+          lastAdType.value = adType.value
+          log('info', `Remembered last video: ${currentVideo.value.title} at index ${currentLoopIndex.value} in slot ${currentSlot.value?.name || 'None'} with ad_type ${adType.value}`)
+        }
+
+        // Stop current video immediately
+        const videoElement = document.getElementById('videoPlayer')
+        if (videoElement && !videoElement.paused) {
+          videoElement.pause()
+          videoElement.currentTime = 0
+        }
+
+        // Set playing state
+        isPerfumeAdPlaying.value = true
+        perfumeAdState.value = PERFUME_AD_STATES.PLAYING
+
+        // Find perfume ads for this brand
+        const brandPerfumeAds = manifest.value.perfume_ads.filter(ad => ad.brand_id === parseInt(data.brand_id))
+
+        if (brandPerfumeAds.length > 0) {
+          // Play all perfume videos for this brand sequentially
+          await playPerfumeVideosSequentially(brandPerfumeAds)
+        } else {
+          log('warn', `No perfume ads found for brand ${data.brand_id}, continuing with regular playback`)
+          isPerfumeAdPlaying.value = false
+          perfumeAdState.value = PERFUME_AD_STATES.IDLE
+          playNextInLoop()
         }
       }
-      
-    } catch (error) {
-      log('error', `Failed to handle advertising state: ${error.message}`)
-      isPerfumeAdPlaying.value = false
-      // Continue with regular playback
-      playNextInLoop()
     }
+
+  } catch (error) {
+    log('error', `Failed to handle advertising state: ${error.message}`)
+    isPerfumeAdPlaying.value = false
+    perfumeAdState.value = PERFUME_AD_STATES.IDLE
+    // Continue with regular playback
+    playNextInLoop()
   }
 }
 
@@ -685,41 +713,48 @@ const handleAdvertisingState = async (data) => {
 const playPerfumeVideosSequentially = async (perfumeAds) => {
   try {
     isPerfumeAdPlaying.value = true
+    perfumeAdState.value = PERFUME_AD_STATES.PLAYING
     log('info', `Starting sequential playback of ${perfumeAds.length} perfume videos`)
-    
+
     for (let i = 0; i < perfumeAds.length; i++) {
+      // Check if we should continue (user might have triggered cancel)
+      if (!componentMounted || perfumeAdState.value !== PERFUME_AD_STATES.PLAYING) {
+        log('info', 'Perfume ad playback interrupted, stopping sequence')
+        break
+      }
+
       const perfumeAd = perfumeAds[i]
-      
+
       // Check perfume time cap before playing each video
       if (perfumeTimeToday.value >= manifest.value.max_cap_seconds) {
         log('warn', `Perfume ad time cap reached: ${perfumeTimeToday.value}s / ${manifest.value.max_cap_seconds}s`)
         break
       }
-      
+
       log('info', `Playing perfume video ${i + 1}/${perfumeAds.length}: ${perfumeAd.title}`)
-      
+
       // Stop any currently playing video before starting the perfume ad
       const videoElement = document.getElementById('videoPlayer')
       if (videoElement && !videoElement.paused) {
         videoElement.pause()
         videoElement.currentTime = 0
       }
-      
+
       // Play the perfume video
       await playVideo(perfumeAd, 'perfume')
-      
+
       // Wait for video to finish playing by monitoring the video element
       await new Promise(resolve => {
         const videoElement = document.getElementById('videoPlayer')
         const timeoutIds = []
-        
+
         const checkVideoEnded = () => {
-          if (!componentMounted) {
-            // Component unmounted, resolve immediately
+          if (!componentMounted || perfumeAdState.value !== PERFUME_AD_STATES.PLAYING) {
+            // Component unmounted or state changed, resolve immediately
             resolve()
             return
           }
-          
+
           if (videoElement.ended) {
             log('info', `Perfume video ${perfumeAd.title} ended naturally`)
             resolve()
@@ -732,32 +767,35 @@ const playPerfumeVideosSequentially = async (perfumeAds) => {
             timeoutIds.push(timeoutId)
           }
         }
-        
+
         // Start checking after a short delay to ensure video starts playing
         const initialTimeoutId = createManagedTimeout(checkVideoEnded, 500)
         timeoutIds.push(initialTimeoutId)
-        
+
         // Store timeout IDs for cleanup
         resolve.cleanup = () => {
           timeoutIds.forEach(id => clearManagedTimeout(id))
         }
       })
-      
+
       // Small gap between perfume videos
       await new Promise(resolve => createManagedTimeout(resolve, 1000))
     }
-    
+
     // After all perfume videos are played, resume the last video from beginning
     log('info', 'All perfume videos completed, resuming last video from beginning')
+
+    // Cleanup
     isPerfumeAdPlaying.value = false
-    
+    perfumeAdState.value = PERFUME_AD_STATES.IDLE
+
     // Resume the last video that was playing before the interruption
     if (lastPlayingVideo.value) {
       log('info', `Resuming last video from beginning: ${lastPlayingVideo.value.title} in slot ${lastSlot.value?.name || 'None'} with ad_type ${lastAdType.value}`)
       // Reset the loop index to where we were before
       currentLoopIndex.value = lastLoopIndex.value
       await playVideo(lastPlayingVideo.value, lastAdType.value, lastSlot.value)
-      
+
       // After the resumed video ends, continue with the next video in the loop
       createManagedTimeout(() => {
         currentLoopIndex.value = (lastLoopIndex.value + 1) % playbackLoop.value.length
@@ -768,12 +806,12 @@ const playPerfumeVideosSequentially = async (perfumeAds) => {
       log('info', 'No last video recorded, continuing with regular playback')
       playNextInLoop()
     }
-    
+
   } catch (error) {
     log('error', `Failed to play perfume videos sequentially: ${error.message}`)
+    // Ensure cleanup on error
     isPerfumeAdPlaying.value = false
-    
-    // Continue with regular playback
+    perfumeAdState.value = PERFUME_AD_STATES.IDLE
     playNextInLoop()
   }
 }
@@ -845,16 +883,45 @@ const startSlotTimeMonitoring = () => {
   if (slotTimeCheckInterval.value) {
     clearInterval(slotTimeCheckInterval.value)
   }
-  
+
   let lastSlotRefreshTime = Date.now()
-  
+  let wasInSlotRange = null // Track previous slot range state
+  let debugCounter = 0 // For debugging
+
   // Check every second
   slotTimeCheckInterval.value = createManagedInterval(async () => {
-    // console.log('Checking slot time against current time...');
     const now = new Date()
     const currentTime = formatTime(now.getHours(), now.getMinutes())
-    // console.log(`Current time: ${currentTime}`);
-    
+    debugCounter++
+
+    // Debug logging every 30 seconds
+    if (debugCounter % 30 === 0) {
+      log('info', `Time check ${debugCounter}: Current time: ${currentTime}, Slot range: ${startTimeSlot.value} - ${endTimeSlot.value}, Black screen: ${isBlackScreenActive.value}`)
+    }
+
+    // Ensure we have valid slot times before checking
+    if (!startTimeSlot.value || !endTimeSlot.value) {
+      if (debugCounter % 10 === 0) {
+        log('warn', 'Slot times not available, fetching from API...')
+      }
+
+      // Try to fetch slot times immediately if not available
+      try {
+        const response = await fetch(`${apiBaseUrl.value}/api/slot/active`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success) {
+            startTimeSlot.value = data.start_time
+            endTimeSlot.value = data.end_time
+            log('info', `Fetched slot times: ${data.start_time} - ${data.end_time}`)
+          }
+        }
+      } catch (error) {
+        log('error', `Failed to fetch slot times: ${error.message}`)
+      }
+      return
+    }
+
     // Refresh slot times from API every 5 minutes to get updates
     if (Date.now() - lastSlotRefreshTime > 5 * 60 * 1000) {
       try {
@@ -864,15 +931,15 @@ const startSlotTimeMonitoring = () => {
           if (data.success) {
             const oldStartTime = startTimeSlot.value
             const oldEndTime = endTimeSlot.value
-            
+
             startTimeSlot.value = data.start_time
             endTimeSlot.value = data.end_time
-            
+
             // Log if slot times have changed
             if (oldStartTime !== data.start_time || oldEndTime !== data.end_time) {
               log('info', `Slot times updated: ${oldStartTime}-${oldEndTime} → ${data.start_time}-${data.end_time}`)
             }
-            
+
             lastSlotRefreshTime = Date.now()
           }
         }
@@ -880,48 +947,37 @@ const startSlotTimeMonitoring = () => {
         log('warn', `Failed to refresh slot times: ${error.message}`)
       }
     }
-    
-    const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
-    // console.log(`Slot range: ${startTimeSlot.value} - ${endTimeSlot.value}, In range: ${isInSlotRange}`);
-    
-    // If current time is outside slot range
-    if (!isInSlotRange) {
-      // Check if we were previously playing videos (not already showing black screen)
-      if (!isBlackScreenActive.value) {
-        log('info', `Time ${currentTime} is outside slot range ${startTimeSlot.value} - ${endTimeSlot.value}, stopping video and showing black screen`)
-        
-        // // Stop any currently playing video immediately
-        // const videoElement = document.getElementById('videoPlayer')
-        // if (videoElement && !videoElement.paused) {
-        //   videoElement.pause()
-        //   videoElement.currentTime = 0
-        //   log('info', 'Video stopped immediately due to end of slot time')
-        // }
-        // showBlackScreen(false)
 
-        window.location.reload();
+    const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
+
+    // Detailed logging for state changes
+    if (wasInSlotRange !== isInSlotRange) {
+      log('info', `State change detected: ${wasInSlotRange} → ${isInSlotRange} at ${currentTime}`)
+      log('info', `Time comparison: ${currentTime} vs ${startTimeSlot.value}-${endTimeSlot.value}`)
+    }
+
+    // Handle state changes only (avoid continuous operations)
+    if (wasInSlotRange === null) {
+      // Initial state setup
+      wasInSlotRange = isInSlotRange
+      if (!isInSlotRange) {
+        log('info', `Initial state: Time ${currentTime} is outside slot range ${startTimeSlot.value} - ${endTimeSlot.value}, showing idle black screen`)
+        showBlackScreen(true)
+      } else {
+        log('info', `Initial state: Time ${currentTime} is within slot range ${startTimeSlot.value} - ${endTimeSlot.value}, starting playback`)
       }
-      
-    } else {
-      // If current time is within slot range and we were showing black screen
-      if (isBlackScreenActive.value) {
-        log('info', `Time ${currentTime} is within slot range ${startTimeSlot.value} - ${endTimeSlot.value}, resuming video playback`)
-        window.location.reload();
-        // // hideBlackScreen()
-        // // Only restart playback if manifest is loaded
-        // if (manifest.value) {
-        //   // Restart playback system if needed
-        //   if (playbackLoop.value.length === 0) {
-        //     initializePlaybackLoop()
-        //   }
-        //   if (playbackLoop.value.length > 0) {
-        //     playNextInLoop()
-        //   }
-        // } else {
-        //   // If manifest is not loaded, we need to initialize the full playback system
-        //   initializeFullPlaybackSystem()
-        // }
+    } else if (wasInSlotRange !== isInSlotRange) {
+      // State has changed
+      if (!isInSlotRange) {
+        // Just exited slot range - show black screen
+        log('info', `Time ${currentTime} is outside slot range ${startTimeSlot.value} - ${endTimeSlot.value}, showing idle black screen`)
+        showBlackScreen(true)
+      } else {
+        // Just entered slot range - refresh and resume playback
+        log('info', `Time ${currentTime} is within slot range ${startTimeSlot.value} - ${endTimeSlot.value}, refreshing to start playback`)
+        window.location.reload()
       }
+      wasInSlotRange = isInSlotRange
     }
   }, 1000) // Check every second
 }
@@ -933,61 +989,34 @@ const refreshSlotTimes = async () => {
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`)
     }
-    
+
     const data = await response.json()
     if (data.success) {
       const oldStartTime = startTimeSlot.value
       const oldEndTime = endTimeSlot.value
-      
+
       startTimeSlot.value = data.start_time
       endTimeSlot.value = data.end_time
-      
+
       // Log if slot times have changed
       if (oldStartTime !== data.start_time || oldEndTime !== data.end_time) {
         log('info', `Slot times refreshed: ${oldStartTime}-${oldEndTime} → ${data.start_time}-${data.end_time}`)
-        
+
         // Check if current time is still within the new slot range
         const now = new Date()
         const currentTime = formatTime(now.getHours(), now.getMinutes())
         const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
-        
+
         // Update active window status
         isActiveWindow.value = isInSlotRange
-        
-        // If we were playing videos but now outside the slot range, stop and show black screen
-        if (!isInSlotRange && !isBlackScreenActive.value) {
-          log('info', `After refresh, time ${currentTime} is outside new slot range ${startTimeSlot.value} - ${endTimeSlot.value}, stopping video and showing black screen`)
-          
-          // Stop any currently playing video immediately
-          const videoElement = document.getElementById('videoPlayer')
-          if (videoElement && !videoElement.paused) {
-            videoElement.pause()
-            videoElement.currentTime = 0
-            log('info', 'Video stopped immediately due to end of slot time after refresh')
-          }
-          
-          showBlackScreen(true)
-        }
-        // If we were showing black screen but now within the slot range, resume playback
-        else if (isInSlotRange && isBlackScreenActive.value) {
-          log('info', `After refresh, time ${currentTime} is within new slot range ${startTimeSlot.value} - ${endTimeSlot.value}, resuming video playback`)
-          // loadNewVideos();
-          
-          hideBlackScreen()
-          
-          // Only restart playback if manifest is loaded
-          if (manifest.value) {
-            // Restart playback system if needed
-            if (playbackLoop.value.length === 0) {
-              initializePlaybackLoop()
-            }
-            if (playbackLoop.value.length > 0) {
-              playNextInLoop()
-            }
-          }
+
+        // Only trigger reload if we need to restart playback system
+        if (isInSlotRange && isBlackScreenActive.value) {
+          log('info', `After refresh, time ${currentTime} is within new slot range ${startTimeSlot.value} - ${endTimeSlot.value}, reloading to start playback`)
+          window.location.reload()
         }
       }
-      
+
       return true
     } else {
       throw new Error(data.message || 'Failed to refresh slot times')
@@ -1676,23 +1705,63 @@ const getCurrentTimeSlot = () => {
 }
 
 const isTimeInSlot = (currentTime, startTime, endTime) => {
-  // Handle time comparison properly
+  // Validate inputs
+  if (!currentTime || !startTime || !endTime) {
+    log('warn', `Invalid time inputs: currentTime=${currentTime}, startTime=${startTime}, endTime=${endTime}`)
+    return false
+  }
+
   const current = parseTime(currentTime)
   const start = parseTime(startTime)
   const end = parseTime(endTime)
-  
+
+  // Check if parsing was successful
+  if (current === null || start === null || end === null) {
+    log('warn', `Failed to parse times: currentTime=${currentTime}→${current}, startTime=${startTime}→${start}, endTime=${endTime}→${end}`)
+    return false
+  }
+
   // Handle overnight slots (e.g., 22:00 to 06:00)
   if (end < start) {
-    return current >= start || current <= end
+    const result = current >= start || current <= end
+    if (debugMode.value) {
+      log('info', `Overnight slot check: ${currentTime}(${current}) vs ${startTime}(${start})-${endTime}(${end}) = ${result}`)
+    }
+    return result
   }
-  
+
   // Normal time range
-  return current >= start && current <= end
+  const result = current >= start && current <= end
+  if (debugMode.value) {
+    log('info', `Normal slot check: ${currentTime}(${current}) vs ${startTime}(${start})-${endTime}(${end}) = ${result}`)
+  }
+  return result
 }
 
 // Helper function to parse time string into minutes for comparison
 const parseTime = (timeStr) => {
-  const [hours, minutes] = timeStr.split(':').map(Number)
+  if (!timeStr || typeof timeStr !== 'string') {
+    return null
+  }
+
+  // Handle various time formats
+  const cleanTimeStr = timeStr.trim()
+  const timeMatch = cleanTimeStr.match(/(\d{1,2}):(\d{2})/)
+
+  if (!timeMatch) {
+    log('warn', `Invalid time format: ${timeStr}`)
+    return null
+  }
+
+  const hours = parseInt(timeMatch[1], 10)
+  const minutes = parseInt(timeMatch[2], 10)
+
+  // Validate hours and minutes
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    log('warn', `Invalid time values: ${timeStr} → hours=${hours}, minutes=${minutes}`)
+    return null
+  }
+
   return hours * 60 + minutes
 }
 
@@ -1834,31 +1903,35 @@ const selectNextGeneralAd = (availableAds) => {
 
 const playPerfumeAd = async (brandId) => {
   try {
-    if (isPerfumeAdPlaying.value) {
-      log('warn', 'Perfume ad already playing')
+    // ENHANCED: Use comprehensive state check
+    if (isProcessingPerfumeAd.value) {
+      log('warn', 'Perfume ad already processing')
       return
     }
-    
+
     // Check perfume time cap
     if (perfumeTimeToday.value >= manifest.value.max_cap_seconds) {
       log('warn', `Perfume ad time cap reached: ${perfumeTimeToday.value}s / ${manifest.value.max_cap_seconds}s`)
       return
     }
-    
+
     const perfumeAd = manifest.value.perfume_ads.find(ad => ad.brand_id === brandId)
     if (!perfumeAd) {
       log('warn', `No perfume ad found for brand ${brandId}`)
       return
     }
-    
+
+    // Set preparing state
+    perfumeAdState.value = PERFUME_AD_STATES.PREPARING
     isPerfumeAdPlaying.value = true
     log('info', `Playing perfume ad: ${perfumeAd.title}`)
-    
+
     await playVideo(perfumeAd, 'perfume')
-    
+
   } catch (error) {
     log('error', `Failed to play perfume ad: ${error.message}`)
     isPerfumeAdPlaying.value = false
+    perfumeAdState.value = PERFUME_AD_STATES.IDLE
   }
 }
 
@@ -2521,18 +2594,22 @@ onMounted(() => {
 onBeforeUnmount(() => {
   // Mark component as unmounted
   componentMounted = false
-  
+
+  // Reset perfume ad state
+  isPerfumeAdPlaying.value = false
+  perfumeAdState.value = PERFUME_AD_STATES.IDLE
+
   // Cleanup all managed resources
   clearAllIntervals()
   clearAllTimeouts()
   revokeAllBlobUrls()
-  
+
   // Cleanup MQTT handler
   cleanupMqttHandler()
-  
+
   // Remove video event listeners
   removeVideoEventListeners()
-  
+
   // Remove fullscreen event listeners
   document.removeEventListener('fullscreenchange', handleFullscreenChange);
   document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
