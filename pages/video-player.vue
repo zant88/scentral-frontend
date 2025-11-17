@@ -17,7 +17,7 @@
         <div id="loadingText">{{ loadingText }}</div>
       </div>
 
-      <div id="statusOverlay" :class="{ hidden: isFullscreen }">
+      <div id="statusOverlay" :class="{ hidden: isFullscreen || !debugMode }">
         <div class="status-item">
           <span class="status-label">Machine ID:</span>
           <span class="status-value">{{ machineId }}</span>
@@ -57,7 +57,7 @@
       </div>
 
       <!-- Load New Video Button -->
-      <button id="loadVideoBtn" v-show="!isFullscreen" @click="loadNewVideos" title="Load New Videos">
+      <button id="loadVideoBtn"  :class="{ hidden: isFullscreen || !debugMode }"  @click="loadNewVideos" title="Load New Videos">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
           <polyline points="7 10 12 15 17 10"></polyline>
@@ -66,7 +66,7 @@
       </button>
 
       <!-- Refresh Slot Times Button -->
-      <button id="refreshSlotBtn" v-show="!isFullscreen" @click="refreshSlotTimes" title="Refresh Slot Times">
+      <button id="refreshSlotBtn" :class="{ hidden: isFullscreen || !debugMode }" @click="refreshSlotTimes" title="Refresh Slot Times">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="23 4 23 10 17 10"></polyline>
           <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
@@ -74,7 +74,7 @@
       </button>
 
       <!-- Fullscreen Button -->
-      <button id="fullscreenBtn" v-show="!isFullscreen" @click="toggleFullscreen" title="Enter Fullscreen">
+      <button id="fullscreenBtn" :class="{ hidden: isFullscreen || !debugMode }"  @click="toggleFullscreen" title="Enter Fullscreen">
         <svg v-if="!isFullscreen" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
         </svg>
@@ -303,7 +303,8 @@ const getApiBaseUrl = () => {
 
 const getDebugMode = () => {
   const urlParams = new URLSearchParams(window.location.search)
-  return urlParams.get('debug') === 'true'
+  const debugParam = urlParams.get('debug')
+  return debugParam === 'true' || debugParam === '1'
 }
 
 
@@ -856,31 +857,35 @@ const loadStartAndEndSlotTime = async () => {
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`)
     }
-    
+
     const data = await response.json()
     if (data.success) {
       startTimeSlot.value = data.start_time;
       endTimeSlot.value = data.end_time;
-      
+
       // Check if current time is within the slot range
       const now = new Date()
       const currentTime = formatTime(now.getHours(), now.getMinutes())
       const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
-      
+
       // Set isActiveWindow based on whether current time is in slot range
       isActiveWindow.value = isInSlotRange
-      
-      // log('info', `Current time: ${currentTime}, Slot range: ${startTimeSlot.value} - ${endTimeSlot.value}, In range: ${isInSlotRange}`)
-      
+
+      log('info', `Current time: ${currentTime}, Slot range: ${startTimeSlot.value} - ${endTimeSlot.value}, In range: ${isInSlotRange}`)
+
       // Start checking every second
       startSlotTimeMonitoring()
-      
+
       return isInSlotRange
     } else {
       throw new Error(data.message || 'Failed to load active slot times')
     }
   } catch (error) {
     log('error', `Failed to load active slot times: ${error.message}`)
+    // Retry after 5 seconds
+    createManagedTimeout(() => {
+      loadStartAndEndSlotTime()
+    }, 5000)
     return null
   }
 }
@@ -895,6 +900,8 @@ const startSlotTimeMonitoring = () => {
   let lastSlotRefreshTime = Date.now()
   let wasInSlotRange = null // Track previous slot range state
   let debugCounter = 0 // For debugging
+
+  log('info', 'Starting slot time monitoring - checking every second')
 
   // Check every second
   slotTimeCheckInterval.value = createManagedInterval(async () => {
@@ -958,6 +965,11 @@ const startSlotTimeMonitoring = () => {
 
     const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
 
+    // Force debug logging every check when debug mode is enabled
+    if (debugMode.value) {
+      log('info', `Slot check: ${currentTime} vs ${startTimeSlot.value}-${endTimeSlot.value} = ${isInSlotRange}`)
+    }
+
     // Detailed logging for state changes
     if (wasInSlotRange !== isInSlotRange) {
       log('info', `State change detected: ${wasInSlotRange} → ${isInSlotRange} at ${currentTime}`)
@@ -977,7 +989,7 @@ const startSlotTimeMonitoring = () => {
     } else if (wasInSlotRange !== isInSlotRange) {
       // State has changed
       if (!isInSlotRange) {
-        // Just exited slot range - show black screen
+        // Just exited slot range - show black screen immediately
         log('info', `Time ${currentTime} is outside slot range ${startTimeSlot.value} - ${endTimeSlot.value}, showing idle black screen`)
         showBlackScreen(true)
       } else {
@@ -986,6 +998,15 @@ const startSlotTimeMonitoring = () => {
         window.location.reload()
       }
       wasInSlotRange = isInSlotRange
+    } else {
+      // No state change, but ensure we're in the correct state
+      if (!isInSlotRange && !isBlackScreenActive.value) {
+        log('warn', `Time ${currentTime} is outside slot range but black screen is not active, activating now`)
+        showBlackScreen(true)
+      } else if (isInSlotRange && isBlackScreenActive.value) {
+        log('warn', `Time ${currentTime} is within slot range but black screen is active, deactivating now`)
+        hideBlackScreen()
+      }
     }
   }, 1000) // Check every second
 }
@@ -1740,6 +1761,7 @@ const isTimeInSlot = (currentTime, startTime, endTime) => {
 
   // Normal time range
   const result = current >= start && current <= end
+  // Always log time comparison in debug mode for troubleshooting
   if (debugMode.value) {
     log('info', `Normal slot check: ${currentTime}(${current}) vs ${startTime}(${start})-${endTime}(${end}) = ${result}`)
   }
@@ -1827,8 +1849,13 @@ const hideBlackScreen = () => {
 // Restart the entire playback system when waking up from black screen
 const restartPlaybackSystem = async () => {
   try {
-    log('info', 'Restarting playback system after black screen wake-up')
-    
+    log('info', 'Restarting playback system after entering active hours')
+
+    // Hide black screen first
+    hideBlackScreen()
+    isLoading.value = false
+    playbackStatus.value = 'Starting playback...'
+
     // Clear any existing intervals to avoid duplicates
     if (balanceCheckInterval.value) {
       clearInterval(balanceCheckInterval.value)
@@ -1836,27 +1863,27 @@ const restartPlaybackSystem = async () => {
     if (slotCheckInterval.value) {
       clearInterval(slotCheckInterval.value)
     }
-    
+
     // Reload fresh data
     await loadManifest()
     await loadBrandBalances()
-    
+
     // Reinitialize playback loop with fresh data
     initializePlaybackLoop()
-    
+
     // Start the playback loop
     if (playbackLoop.value.length > 0) {
-      log('info', 'Starting playback after wake-up')
+      log('info', 'Starting playback after entering active hours')
       playNextInLoop()
     } else {
-      log('warn', 'No videos available after wake-up, staying on black screen')
+      log('warn', 'No videos available, showing black screen')
       showBlackScreen(true)
     }
-    
+
     // Restart monitoring intervals
     balanceCheckInterval.value = createManagedInterval(loadBrandBalances, 5 * 60 * 1000)
     startSlotMonitoring()
-    
+
   } catch (error) {
     log('error', `Failed to restart playback system: ${error.message}`)
     showBlackScreen(true)
@@ -2009,7 +2036,10 @@ const playVideo = async (video, adTypeParam, slot = null) => {
       // If this is not the default video, try to play the default video instead
       if (video.ad_type !== 'default' && manifest.value.default_video) {
         log('info', 'Falling back to default video due to video element error')
-        playDefaultVideo()
+        if (isActiveWindow.value) {
+          playDefaultVideo()
+        }
+        
       }
     }
     
@@ -2024,7 +2054,9 @@ const playVideo = async (video, adTypeParam, slot = null) => {
         // If this is not the default video, try to play the default video instead
         if (video.ad_type !== 'default' && manifest.value.default_video) {
           log('info', 'Falling back to default video due to play error')
-          playDefaultVideo()
+          if (isActiveWindow.value) {
+            playDefaultVideo()
+          }
         }
       })
     }
@@ -2111,69 +2143,88 @@ const handleVideoEnded = async () => {
 }
 
 const handleVideoError = async (error) => {
-  if (!currentVideo.value) {
-    return
+  if (isActiveWindow.value) {
+    if (!currentVideo.value) {
+      return
+    }
+    
+    log('error', `Video playback error: ${error.message || 'Unknown error'}`)
+    
+    // Log playback error
+    await logPlaybackEvent({
+      videoId: currentVideo.value.id,
+      brandId: currentVideo.value.brand_id,
+      adType: currentVideo.value === manifest.value.default_video ? 'default' : 
+              (isPerfumeAdPlaying.value ? 'perfume' : 'general'),
+      slotId: currentSlot.value ? currentSlot.value.id : null,
+      status: 'error',
+      duration: 0,
+      cost: 0
+    })
+    
+    // Retry logic
+    if (retryCount.value < maxRetries.value) {
+      retryCount.value++
+      log('info', `Retrying video playback (${retryCount.value}/${maxRetries.value})`)
+      
+      createManagedTimeout(() => {
+        playVideo(currentVideo.value, isPerfumeAdPlaying.value ? 'perfume' : 'general', currentSlot.value)
+      }, 2000 * retryCount.value) // Exponential backoff
+      
+    } else {
+      log('error', 'Max retries reached, falling back to default video')
+      retryCount.value = 0
+      isPerfumeAdPlaying.value = false
+      
+      createManagedTimeout(() => {
+        playDefaultVideo()
+      }, 1000)
+    }
   }
   
-  log('error', `Video playback error: ${error.message || 'Unknown error'}`)
-  
-  // Log playback error
-  await logPlaybackEvent({
-    videoId: currentVideo.value.id,
-    brandId: currentVideo.value.brand_id,
-    adType: currentVideo.value === manifest.value.default_video ? 'default' : 
-            (isPerfumeAdPlaying.value ? 'perfume' : 'general'),
-    slotId: currentSlot.value ? currentSlot.value.id : null,
-    status: 'error',
-    duration: 0,
-    cost: 0
-  })
-  
-  // Retry logic
-  if (retryCount.value < maxRetries.value) {
-    retryCount.value++
-    log('info', `Retrying video playback (${retryCount.value}/${maxRetries.value})`)
-    
-    createManagedTimeout(() => {
-      playVideo(currentVideo.value, isPerfumeAdPlaying.value ? 'perfume' : 'general', currentSlot.value)
-    }, 2000 * retryCount.value) // Exponential backoff
-    
-  } else {
-    log('error', 'Max retries reached, falling back to default video')
-    retryCount.value = 0
-    isPerfumeAdPlaying.value = false
-    
-    createManagedTimeout(() => {
-      playDefaultVideo()
-    }, 1000)
-  }
 }
 
 const showBlackScreen = (isPowerSaving = false) => {
   isBlackScreenActive.value = true
+
+  // Stop all playback loops first
+  if (slotCheckInterval.value) {
+    clearInterval(slotCheckInterval.value)
+    slotCheckInterval.value = null
+  }
+
   const videoElement = document.getElementById('videoPlayer')
   if (videoElement) {
+    // Stop any currently playing video immediately
+    if (!videoElement.paused) {
+      videoElement.pause()
+    }
+    videoElement.currentTime = 0
     videoElement.src = ''
     videoElement.load()
     videoElement.style.backgroundColor = '#000'
+    log('info', 'Video element stopped and cleared for black screen')
   }
-  
+
+  // Stop any ongoing perfume ad
+  isPerfumeAdPlaying.value = false
+  perfumeAdState.value = PERFUME_AD_STATES.IDLE
+
+  // Clear playback loop
+  playbackLoop.value = []
+  currentLoopIndex.value = 0
+
   if (isPowerSaving) {
-    playbackStatus.value = 'Power saving mode'
-    
-    // Stop all playback loops
-    if (slotCheckInterval.value) {
-      clearInterval(slotCheckInterval.value)
-      slotCheckInterval.value = null
-    }
-    
+    playbackStatus.value = 'Outside active hours'
+    isActiveWindow.value = false
+
     log('info', 'Black screen activated - outside active hours')
   } else {
     playbackStatus.value = 'No content'
-    
+
     // Try again after 30 seconds for regular black screen
     createManagedTimeout(() => {
-      if (!isPowerSaving) {
+      if (!isPowerSaving && !isActiveWindow.value) {
         playNextInLoop()
       }
     }, 30000)
@@ -2556,6 +2607,9 @@ const init = async () => {
       showBlackScreen(true)
       isLoading.value = false
       playbackStatus.value = 'Outside active hours'
+
+      // Slot monitoring is already started in loadStartAndEndSlotTime() at line 868
+      // So we can safely return here - monitoring will continue
       return
     }
     
