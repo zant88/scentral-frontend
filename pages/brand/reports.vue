@@ -236,7 +236,6 @@
                   <th>Video</th>
                   <th>Type</th>
                   <th>Plays</th>
-                  <th>Unique Views</th>
                   <th>Total Spend</th>
                   <th>Avg Cost/Play</th>
                   <th>Engagement Rate</th>
@@ -258,7 +257,6 @@
                     </span>
                   </td>
                   <td>{{ formatNumber(video.total_plays) }}</td>
-                  <td>{{ formatNumber(video.unique_views) }}</td>
                   <td>{{ formatCurrency(video.total_spend) }}</td>
                   <td>{{ video.total_plays > 0 ? formatCurrency(video.total_spend / video.total_plays) : 'N/A' }}</td>
                   <td>{{ video.engagement_rate }}%</td>
@@ -425,10 +423,6 @@
                       <tr>
                         <td><strong>Total Plays:</strong></td>
                         <td>{{ formatNumber(selectedVideo.total_plays) }}</td>
-                      </tr>
-                      <tr>
-                        <td><strong>Unique Views:</strong></td>
-                        <td>{{ formatNumber(selectedVideo.unique_views) }}</td>
                       </tr>
                       <tr>
                         <td><strong>Total Spend:</strong></td>
@@ -1010,33 +1004,51 @@ const renderTimeAnalysisChart = () => {
 
   const ctx = canvas.getContext('2d');
 
-  let labels, data, title;
+  let labels = [];
+  let data = [];
+  let title = '';
 
   // Get data from API response based on time analysis type
   if (timeAnalysis.value === 'hourly' && timeAnalysisData.value.hourly) {
+    // Hourly data from backend
     labels = timeAnalysisData.value.hourly.map(h => h.hour + ':00');
     data = timeAnalysisData.value.hourly.map(h => h.plays);
-    title = 'Hourly Performance';
-  } else if (timeAnalysis.value === 'daily' && timeAnalysisData.value.weekly) {
-    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    labels = timeAnalysisData.value.weekly.map(w => dayNames[w.day_of_week]);
-    data = timeAnalysisData.value.weekly.map(w => w.plays);
-    title = 'Daily Performance';
-  } else {
-    // Default sample data
-    if (timeAnalysis.value === 'hourly') {
-      labels = Array.from({length: 24}, (_, i) => `${i}:00`);
-      data = Array.from({length: 24}, () => Math.floor(Math.random() * 100) + 10);
-      title = 'Hourly Performance';
-    } else if (timeAnalysis.value === 'daily') {
-      labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      data = Array.from({length: 7}, () => Math.floor(Math.random() * 500) + 50);
-      title = 'Daily Performance';
+    title = 'Hourly Performance (Avg)';
+  } else if (timeAnalysis.value === 'daily') {
+    // Use performance_trend data for daily view
+    if (performanceTrendData.value && performanceTrendData.value.length > 0) {
+       labels = performanceTrendData.value.map(d => {
+         const date = new Date(d.date);
+         return date.toLocaleDateString('en-US', { weekday: 'short' });
+       });
+       data = performanceTrendData.value.map(d => d.plays);
     } else {
-      labels = ['Week 1', 'Week 2', 'Week 3', 'Week 4'];
-      data = Array.from({length: 4}, () => Math.floor(Math.random() * 2000) + 200);
-      title = 'Weekly Performance';
+       // Fallback if no trend data
+       labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+       data = [0, 0, 0, 0, 0, 0, 0];
     }
+    title = 'Daily Performance';
+  } else if (timeAnalysis.value === 'weekly') {
+    // Aggregate performance_trend data by week
+    if (performanceTrendData.value && performanceTrendData.value.length > 0) {
+      const weeklyMap = {};
+      performanceTrendData.value.forEach(d => {
+        const date = new Date(d.date);
+        // Simple week number calculation
+        const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
+        const pastDaysOfYear = (date - firstDayOfYear) / 86400000;
+        const weekNum = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+        const weekLabel = `Week ${weekNum}`;
+        
+        weeklyMap[weekLabel] = (weeklyMap[weekLabel] || 0) + d.plays;
+      });
+      labels = Object.keys(weeklyMap);
+      data = Object.values(weeklyMap);
+    } else {
+       labels = ['Week 1', 'Week 2', 'Week 3', 'Week 4'];
+       data = [0, 0, 0, 0];
+    }
+    title = 'Weekly Performance';
   }
 
   timeAnalysisChart.value = new Chart(ctx, {
