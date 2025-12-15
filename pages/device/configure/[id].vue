@@ -56,6 +56,7 @@ const fetchAssignedProducts = async () => {
         spray_amount: mp.spray_amount || 0,
         min_volume: mp.min_volume || 0,
         price_per_spray: mp.price_per_spray || 0,
+        member_discount: mp.member_discount || 0,
         is_active: mp.is_active !== undefined ? mp.is_active : true,
         is_from_server: true
       }));
@@ -112,6 +113,7 @@ const copyFromMachine = async () => {
           spray_amount: mp.spray_amount || 0,
           min_volume: mp.min_volume || 0,
           price_per_spray: mp.price_per_spray || 0,
+          member_discount: mp.member_discount || 0,
           background_color: mp.background_color || '#000000',
           is_active: mp.is_active !== undefined ? mp.is_active : true,
           is_from_server: false
@@ -204,6 +206,7 @@ const addProduct = () => {
     spray_amount: 0,
     min_volume: 0,
     price_per_spray: 0,
+    member_discount: 0,
     is_active: true,
     is_from_server: false
   });
@@ -390,6 +393,7 @@ const saveConfig = async () => {
           spray_amount: p.spray_amount,
           min_volume: p.min_volume,
           price_per_spray: p.price_per_spray,
+          member_discount: p.member_discount || 0,
           background_color: rgbToHex(p.background_color),
           is_active: p.is_active
         }))
@@ -542,7 +546,8 @@ watch(() => dropdownOpen.value, (open) => {
                 <th style="width: 200px; text-align: center;">Slot</th>
                 <th style="width: 200px; text-align: center;">Spray Amount</th>
                 <th style="width: 200px; text-align: center;">Min Volume (ml)</th>
-                <th style="text-align: center;">Price per Spray (Rp)</th>  
+                <th style="text-align: center;">Price per Spray (Rp)</th>
+                <th style="width: 200px; text-align: center;">Member Discount (%)</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -570,6 +575,9 @@ watch(() => dropdownOpen.value, (open) => {
                   <input type="number" style="text-align: center;" v-model.number="item.price_per_spray" class="form-control" min="0" step="1" @focus="selectInputContent" @click="selectInputContent" :disabled="!item.is_active" />
                 </td>
                 <td>
+                  <input type="number" style="text-align: center;" v-model.number="item.member_discount" class="form-control" min="0" max="100" step="0.01" @focus="selectInputContent" @click="selectInputContent" :disabled="!item.is_active" placeholder="0.00" />
+                </td>
+                <td>
                   <div v-if="item.is_active" class="btn-group">
                     <button class="btn btn-danger btn-sm" @click="removeProduct(item.product_id, item.is_from_server)" title="Remove/Deactivate">
                       <i class="fas fa-trash"></i>
@@ -583,7 +591,7 @@ watch(() => dropdownOpen.value, (open) => {
                 </td>
               </tr>
               <tr v-if="filteredProducts.length === 0">
-                <td colspan="8" class="text-center">
+                <td colspan="9" class="text-center">
                   {{ statusFilter === 'all' ? 'No products assigned.' :
                      statusFilter === 'active' ? 'No active products found.' :
                      'No inactive products found.' }}

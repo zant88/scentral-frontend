@@ -149,13 +149,13 @@
             </div>
             <div class="card-wrap">
               <div class="card-header">
-                <h4>Unique Views</h4>
+                <h4>Device Reach</h4>
               </div>
               <div class="card-body">
                 {{ formatNumber(reportMetrics.unique_views) }}
                 <small class="text-muted d-block">
                   <i :class="getTrendIcon(reportMetrics.views_trend)" class="mr-1"></i>
-                  {{ Math.abs(reportMetrics.views_trend) }}% from previous period
+                  {{ Math.abs(Math.round(reportMetrics.views_trend)) }}% from previous period
                 </small>
               </div>
             </div>
@@ -236,6 +236,7 @@
                   <th>Video</th>
                   <th>Type</th>
                   <th>Plays</th>
+                  <th>Unique Devices</th>
                   <th>Total Spend</th>
                   <th>Avg Cost/Play</th>
                   <th>Engagement Rate</th>
@@ -257,6 +258,7 @@
                     </span>
                   </td>
                   <td>{{ formatNumber(video.total_plays) }}</td>
+                  <td>{{ formatNumber(video.unique_views) }}</td>
                   <td>{{ formatCurrency(video.total_spend) }}</td>
                   <td>{{ video.total_plays > 0 ? formatCurrency(video.total_spend / video.total_plays) : 'N/A' }}</td>
                   <td>{{ video.engagement_rate }}%</td>
@@ -425,6 +427,10 @@
                         <td>{{ formatNumber(selectedVideo.total_plays) }}</td>
                       </tr>
                       <tr>
+                        <td><strong>Unique Devices:</strong></td>
+                        <td>{{ formatNumber(selectedVideo.unique_views) }}</td>
+                      </tr>
+                      <tr>
                         <td><strong>Total Spend:</strong></td>
                         <td>{{ formatCurrency(selectedVideo.total_spend) }}</td>
                       </tr>
@@ -549,8 +555,8 @@ const fetchReportData = async () => {
         unique_views: data.data.metrics.unique_devices || 0,
         plays_trend: data.data.metrics.plays_trend || 0,
         spend_trend: data.data.metrics.cost_trend || 0,
-        engagement_trend: 0, // Backend doesn't provide this yet
-        views_trend: 0 // Backend doesn't provide this yet
+        engagement_trend: data.data.metrics.engagement_trend || 0,
+        views_trend: data.data.metrics.unique_devices_trend || 0
       };
 
       // Update video reports with enhanced data

@@ -516,10 +516,13 @@ const fetchAvailableSlots = async (startDate = '', endDate = '') => {
     loading.value = true;
     const accessToken = localStorage.getItem('access_token');
     
-    // Build API URL with date range parameters if provided
-    let slotsUrl = `${apiUrl}/api/slots?status=ACTIVE`;
-    if (startDate) slotsUrl += `&start_date=${startDate}`;
-    if (endDate) slotsUrl += `&end_date=${endDate}`;
+    // Use brand-specific endpoint to get slot definitions
+    // We use available-slots to get the list of slots. 
+    // We pass the start date as 'date' if available, otherwise default to today.
+    let slotsUrl = `${apiUrl}/api/brand/dashboard/available-slots`;
+    if (startDate) {
+      slotsUrl += `?date=${startDate}`;
+    }
     
     // Call the real API endpoint for available slots
     const slotsResponse = await fetchWithAuth(slotsUrl, {
@@ -695,9 +698,9 @@ const fetchVideos = async () => {
       throw new Error('No access token found. Please log in again.');
     }
     
-    console.log('Fetching brand videos from:', `${apiUrl}/api/brand/videos`);
+    console.log('Fetching brand videos from:', `${apiUrl}/api/brand/dashboard/videos`);
     
-    const response = await fetchWithAuth(`${apiUrl}/api/brand/videos`);
+    const response = await fetchWithAuth(`${apiUrl}/api/brand/dashboard/videos`);
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
