@@ -6,6 +6,7 @@
 .custom-select,
 .custom-file-label {
   @include mixin.form-control;
+
   &:focus {
     @include mixin.form-control-focus;
   }
@@ -36,29 +37,41 @@ select.form-control:not([size]):not([multiple]) {
   height: calc(2.25rem + 6px);
 }
 
+.status-filter {
+  height: 31px;
+  padding: 4px 15px;
+}
+
 .form-control.creditcard {
   background-position: 98%;
   background-repeat: no-repeat;
   background-size: 40px;
   padding-right: 60px;
+
   &.paypal {
     @include mixin.paypal;
   }
+
   &.visa {
     @include mixin.visa;
   }
+
   &.americanexpress {
     @include mixin.americanexpress;
   }
+
   &.dinersclub {
     @include mixin.dinersclub;
   }
+
   &.discover {
     @include mixin.discover;
   }
+
   &.jcb {
     @include mixin.jcb;
   }
+
   &.mastercard {
     @include mixin.mastercard;
   }
@@ -66,15 +79,18 @@ select.form-control:not([size]):not([multiple]) {
 
 .form-group {
   margin-bottom: 25px;
+
   .control-label,
-  > label {
+  >label {
     font-weight: 600;
     color: functions.color(fontdark);
     font-size: 12px;
     letter-spacing: .5px;
   }
+
   &.floating-addon {
     position: relative;
+
     .input-group-prepend {
       position: absolute;
       top: 0;
@@ -82,6 +98,7 @@ select.form-control:not([size]):not([multiple]) {
       height: 100%;
       z-index: 5;
     }
+
     &:not(.floating-addon-not-append) {
       .input-group-append {
         position: absolute;
@@ -92,15 +109,19 @@ select.form-control:not([size]):not([multiple]) {
         right: 0;
       }
     }
-    .input-group-prepend .input-group-text, .input-group-append .input-group-text {
+
+    .input-group-prepend .input-group-text,
+    .input-group-append .input-group-text {
       border-color: transparent;
       background-color: transparent;
       font-size: 20px;
     }
+
     .form-control {
       border-radius: 3px;
       padding-left: 40px;
-      + .form-control {
+
+      +.form-control {
         border-radius: 0 3px 3px 0;
         padding-left: 15px;
       }
@@ -122,17 +143,19 @@ select.form-control:not([size]):not([multiple]) {
   background-color: functions.color(primary) !important;
 }
 
-.custom-checkbox-table {
-}
+.custom-checkbox-table {}
 
 .custom-file-label {
   line-height: 2.2;
+
   &:after {
     height: calc(2.25rem + 4px);
     line-height: 2.2;
     border-color: transparent;
   }
-  &:focus, &:active {
+
+  &:focus,
+  &:active {
     box-shadow: none;
     outline: none;
   }
@@ -140,9 +163,10 @@ select.form-control:not([size]):not([multiple]) {
 
 .custom-file-input {
   &:focus {
-    + .custom-file-label {
+    +.custom-file-label {
       box-shadow: none;
       border-color: functions.color(primary);
+
       &:after {
         border-color: transparent;
       }
@@ -160,13 +184,16 @@ select.form-control:not([size]):not([multiple]) {
   -ms-flex-positive: 1;
   flex-grow: 1;
   position: relative;
-  + .selectgroup-item {
+
+  +.selectgroup-item {
     margin-left: -1px;
   }
+
   &:not(:first-child) .selectgroup-button {
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
   }
+
   &:not(:last-child) .selectgroup-button {
     border-top-right-radius: 0;
     border-bottom-right-radius: 0;
@@ -204,13 +231,14 @@ select.form-control:not([size]):not([multiple]) {
 .selectgroup-button-icon {
   padding-left: .5rem;
   padding-right: .5rem;
+
   i {
     font-size: 14px;
   }
 }
 
 .selectgroup-input {
-  &:checked + .selectgroup-button {
+  &:checked+.selectgroup-button {
     background-color: functions.color(primary);
     color: #fff;
     z-index: 1;
@@ -223,11 +251,13 @@ select.form-control:not([size]):not([multiple]) {
   flex-wrap: wrap;
   -ms-flex-align: start;
   align-items: flex-start;
+
   .selectgroup-item {
     margin-right: .5rem;
     -ms-flex-positive: 0;
     flex-grow: 0;
   }
+
   .selectgroup-button {
     border-radius: 50px !important;
   }
@@ -257,6 +287,7 @@ select.form-control:not([size]):not([multiple]) {
   display: flex;
   -ms-flex-direction: column;
   flex-direction: column;
+
   .custom-switch {
     margin-bottom: .5rem;
   }
@@ -272,6 +303,7 @@ select.form-control:not([size]):not([multiple]) {
   vertical-align: bottom;
   border: 1px solid rgba(0, 40, 100, 0.12);
   transition: .3s border-color, .3s background-color;
+
   &:before {
     content: '';
     position: absolute;
@@ -286,13 +318,15 @@ select.form-control:not([size]):not([multiple]) {
 }
 
 .custom-switch-input {
-  &:checked ~ .custom-switch-indicator {
+  &:checked~.custom-switch-indicator {
     background: functions.color(primary);
+
     &:before {
       left: calc(1rem + 1px);
     }
   }
-  &:focus ~ .custom-switch-indicator {
+
+  &:focus~.custom-switch-indicator {
     border-color: functions.color(primary);
   }
 }
@@ -303,7 +337,7 @@ select.form-control:not([size]):not([multiple]) {
   transition: .3s color;
 }
 
-.custom-switch-input:checked ~ .custom-switch-description {
+.custom-switch-input:checked~.custom-switch-description {
   color: #495057;
 }
 
@@ -329,10 +363,11 @@ select.form-control:not([size]):not([multiple]) {
 }
 
 .imagecheck-input {
-  &:focus ~ .imagecheck-figure {
+  &:focus~.imagecheck-figure {
     border-color: functions.color(primary);
   }
-  &:checked ~ .imagecheck-figure {
+
+  &:checked~.imagecheck-figure {
     border-color: rgba(0, 40, 100, 0.24);
   }
 }
@@ -358,7 +393,7 @@ select.form-control:not([size]):not([multiple]) {
   transition: .3s opacity;
 }
 
-.imagecheck-input:checked ~ .imagecheck-figure:before {
+.imagecheck-input:checked~.imagecheck-figure:before {
   opacity: 1;
 }
 
@@ -366,10 +401,12 @@ select.form-control:not([size]):not([multiple]) {
   max-width: 100%;
   opacity: .64;
   transition: .3s opacity;
+
   &:first-child {
     border-top-left-radius: 2px;
     border-top-right-radius: 2px;
   }
+
   &:last-child {
     border-bottom-left-radius: 2px;
     border-bottom-right-radius: 2px;
@@ -381,7 +418,9 @@ select.form-control:not([size]):not([multiple]) {
 }
 
 .imagecheck-input {
-  &:focus ~ .imagecheck-figure .imagecheck-image, &:checked ~ .imagecheck-figure .imagecheck-image {
+
+  &:focus~.imagecheck-figure .imagecheck-image,
+  &:checked~.imagecheck-figure .imagecheck-image {
     opacity: 1;
   }
 }
@@ -399,7 +438,9 @@ select.form-control:not([size]):not([multiple]) {
 }
 
 .imagecheck-input {
-  &:focus ~ .imagecheck-figure .imagecheck-caption, &:checked ~ .imagecheck-figure .imagecheck-caption {
+
+  &:focus~.imagecheck-figure .imagecheck-caption,
+  &:checked~.imagecheck-figure .imagecheck-caption {
     color: #495057;
   }
 }
@@ -426,6 +467,7 @@ select.form-control:not([size]):not([multiple]) {
   border-radius: 3px;
   color: #fff;
   box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+
   &:before {
     content: '';
     opacity: 0;
@@ -440,7 +482,7 @@ select.form-control:not([size]):not([multiple]) {
 }
 
 .colorinput-input {
-  &:checked ~ .colorinput-color:before {
+  &:checked~.colorinput-color:before {
     opacity: 1;
   }
 }

@@ -46,15 +46,17 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     public: {
-      apiBase: 'https://office.scentralhub.com',
-      // apiBase: 'http://localhost:3030',
+      // apiBase: 'https://office.scentralhub.com',
+      apiBase: 'http://192.168.18.137:3030',
       mqttBase: 'wss://mqtt.kodemake.com',
+      mqttUsername: 'scentral',
+      mqttPassword: 'ar0m4db'
     }
   },
-  devtools: { 
+  devtools: {
     enabled: true
   },
-  
+
   // Disable SSR to prevent WebSocket connection issues in development
   ssr: false,
 

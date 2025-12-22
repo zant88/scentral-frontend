@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clear Service Worker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Service Worker Cleanup</h1>
+        <p>This page will help you remove any remaining service workers and cached data from the PWA implementation.</p>
+        
+        <div id="status" class="status info">
+            Click the button below to clear all service workers and caches.
+        </div>
+        
+        <button id="clearButton" onclick="clearServiceWorkers()">Clear Service Workers & Caches</button>
+        <button onclick="location.reload()">Reload Page</button>
+        
+        <div id="results"></div>
+    </div>
+
+    <script>
+        function clearServiceWorkers() {
+            const statusDiv = document.getElementById('status');
+            const resultsDiv = document.getElementById('results');
+            const clearButton = document.getElementById('clearButton');
+            
+            statusDiv.className = 'status info';
+            statusDiv.textContent = 'Clearing service workers and caches...';
+            clearButton.disabled = true;
+            
+            let results = [];
+            
+            // Clear service workers
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                    if (registrations.length === 0) {
+                        results.push('No service workers found.');
+                    } else {
+                        registrations.forEach(function(registration) {
+                            results.push(`Unregistering service worker: ${registration.scope}`);
+                            registration.unregister();
+                        });
+                    }
+                    
+                    // Clear caches
+                    if ('caches' in window) {
+                        caches.keys().then(function(cacheNames) {
+                            if (cacheNames.length === 0) {
+                                results.push('No caches found.');
+                            } else {
+                                cacheNames.forEach(function(cacheName) {
+                                    results.push(`Deleting cache: ${cacheName}`);
+                                    caches.delete(cacheName);
+                                });
+                            }
+                            
+                            // Display results
+                            statusDiv.className = 'status success';
+                            statusDiv.textContent = 'Service workers and caches cleared successfully!';
+                            resultsDiv.innerHTML = '<h3>Results:</h3><ul>' + 
+                                results.map(r => `<li>${r}</li>`).join('') + '</ul>' +
+                                '<p><strong>Please reload your browser/tab to ensure changes take effect.</strong></p>';
+                            
+                            // Clear localStorage items that might be related to PWA
+                            localStorage.removeItem('scentral_machine_id');
+                            
+                            results.push('Local storage cleared.');
+                        });
+                    } else {
+                        statusDiv.className = 'status error';
+                        statusDiv.textContent = 'Cache API not available.';
+                    }
+                }).catch(function(error) {
+                    statusDiv.className = 'status error';
+                    statusDiv.textContent = `Error clearing service workers: ${error.message}`;
+                    clearButton.disabled = false;
+                });
+            } else {
+                statusDiv.className = 'status error';
+                statusDiv.textContent = 'Service Worker API not available in this browser.';
+                clearButton.disabled = false;
+            }
+        }
+        
+        // Check current status on page load
+        window.addEventListener('load', function() {
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                    const statusDiv = document.getElementById('status');
+                    if (registrations.length > 0) {
+                        statusDiv.className = 'status info';
+                        statusDiv.textContent = `Found ${registrations.length} service worker(s). Click the button to remove them.`;
+                    } else {
+                        statusDiv.className = 'status success';
+                        statusDiv.textContent = 'No service workers found. The cleanup may have already been completed.';
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>

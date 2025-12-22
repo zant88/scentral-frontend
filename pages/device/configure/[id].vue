@@ -540,14 +540,12 @@ watch(() => dropdownOpen.value, (open) => {
             <thead>
               <tr>
                 <th>#</th>
-                <th>Image</th>
                 <th>Name</th>
-                <th>Brand</th>
-                <th style="width: 200px; text-align: center;">Slot</th>
-                <th style="width: 200px; text-align: center;">Spray Amount</th>
-                <th style="width: 200px; text-align: center;">Min Volume (ml)</th>
-                <th style="text-align: center;">Price per Spray (Rp)</th>
-                <th style="width: 200px; text-align: center;">Member Discount (%)</th>
+                <th style="width: 120px; text-align: center;">Slot</th>
+                <th style="width: 120px; text-align: center;">Spray</th>
+                <th style="width: 120px; text-align: center;">Min Vol</th>
+                <th style="width: 150px; text-align: center;">Price</th>
+                <th style="width: 120px; text-align: center;">Disc</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -555,13 +553,15 @@ watch(() => dropdownOpen.value, (open) => {
               <tr v-for="(item, i) in filteredProducts" :key="item.product_id" :class="{ 'table-secondary': !item.is_active }">
                 <td>{{ i + 1 }}</td>
                 <td>
-                  <img v-if="item.product && item.product.image_url" :src="item.product.image_url" alt="Product Image" style="height:48px;width:auto;border-radius:6px;box-shadow:0 2px 6px #0001;" :style="{ opacity: item.is_active ? 1 : 0.5 }" />
+                  <div class="d-flex align-items-center">
+                    <img v-if="item.product && item.product.image_url" :src="item.product.image_url" alt="Product Image" style="height:40px;width:auto;border-radius:4px;box-shadow:0 1px 3px #0001;margin-right:10px;" :style="{ opacity: item.is_active ? 1 : 0.5 }" />
+                    <div>
+                      <div class="font-weight-bold">{{ item.product ? item.product.name : '' }}</div>
+                      <small class="text-muted">{{ item.product && item.product.brand ? item.product.brand.name : '' }}</small>
+                      <span v-if="!item.is_active" class="badge badge-warning ml-2">Inactive</span>
+                    </div>
+                  </div>
                 </td>
-                <td>
-                  {{ item.product ? item.product.name : '' }}
-                  <span v-if="!item.is_active" class="badge badge-warning ml-2">Inactive</span>
-                </td>
-                <td>{{ item.product && item.product.brand ? item.product.brand.name : '' }}</td>
                 <td>
                   <input type="number" style="text-align: center;" v-model.number="item.slot" class="form-control" min="1" max="5" step="1" @focus="selectInputContent" @click="selectInputContent" :disabled="!item.is_active" />
                 </td>
@@ -591,7 +591,7 @@ watch(() => dropdownOpen.value, (open) => {
                 </td>
               </tr>
               <tr v-if="filteredProducts.length === 0">
-                <td colspan="9" class="text-center">
+                <td colspan="8" class="text-center">
                   {{ statusFilter === 'all' ? 'No products assigned.' :
                      statusFilter === 'active' ? 'No active products found.' :
                      'No inactive products found.' }}

@@ -8,13 +8,23 @@
       <p class="section-lead">Monitor product inventory across all devices</p>
       <div class="card">
         <div class="card-header actionable">
-          <div class="left-action">&nbsp;</div>
+          <div class="left-action">
+            <select v-model="statusFilter" class="form-control status-filter" @change="fetchStockData">
+              <option value="all">All Products</option>
+              <option value="active">Active Only</option>
+              <option value="inactive">Inactive Only</option>
+            </select>
+          </div>
           <div class="right-action">
-            <input 
-              type="search" 
-              v-model="querySearch" 
+            <NuxtLink to="/stock-adjustment" class="stock-adjustment-btn btn-primary">
+              
+              Stock Adjustment
+            </NuxtLink>
+            <input
+              type="search"
+              v-model="querySearch"
               @input="debouncedSearch"
-              class="form-control" 
+              class="form-control"
               placeholder="Search devices, products, or SKU..." />
           </div>
         </div>
@@ -86,10 +96,11 @@
                     <tr v-if="expandedDevices.has(deviceGroup.machine.id)" class="products-container">
                       <td colspan="7" class="products-cell">
                         <div class="products-grid">
-                          <div 
-                            v-for="product in deviceGroup.products" 
+                          <div
+                            v-for="product in deviceGroup.products"
                             :key="product.id"
                             class="product-card"
+                            :class="{ 'product-inactive': isProductInactive(product) }"
                             :style="{ backgroundColor: product.background_color || product.product.background_color || '#f8f9fa' }"
                           >
                             <div class="product-header">
@@ -112,6 +123,11 @@
                                 <h4 class="product-name">{{ product.product.name }}</h4>
                                 <p class="product-brand">{{ product.product.brand?.name || 'No Brand' }}</p>
                                 <p class="product-sku">SKU: {{ product.product.sku }}</p>
+                                <div class="product-status">
+                                  <span class="status-badge" :class="isProductInactive(product) ? 'status-inactive' : 'status-active'">
+                                    {{ isProductInactive(product) ? 'Inactive' : 'Active' }}
+                                  </span>
+                                </div>
                               </div>
                             </div>
                             
@@ -132,7 +148,7 @@
                               </div>
                               <div class="stat-item">
                                 <span class="stat-label">Spray Amount</span>
-                                <span class="stat-value">{{ product.spray_amount }}ml</span>
+                                <span class="stat-value">{{ product.spray_amount }}</span>
                               </div>
                               <div class="stat-item">
                                 <span class="stat-label">Price/Spray</span>
@@ -434,6 +450,7 @@ const stockData = ref([])
 const loading = ref(false)
 const error = ref(null)
 const querySearch = ref('')
+const statusFilter = ref('active')
 const expandedDevices = ref(new Set())
 
 const pagination = reactive({
@@ -473,7 +490,8 @@ const fetchStockData = async () => {
     const params = new URLSearchParams({
       page: pagination.page.toString(),
       limit: pagination.limit.toString(),
-      ...(querySearch.value && { q: querySearch.value })
+      ...(querySearch.value && { q: querySearch.value }),
+      ...(statusFilter.value && statusFilter.value !== 'all' && { status: statusFilter.value })
     })
     const accessToken = localStorage.getItem('access_token');
     const url = `${apiUrl}/api/device/stock?${params}`;
@@ -616,6 +634,16 @@ const getStockPercentage = (current, minimum) => {
 
 const formatPrice = (price) => {
   return new Intl.NumberFormat('id-ID').format(price || 0)
+}
+
+// Check if product is inactive
+const isProductInactive = (product) => {
+  // If is_active property doesn't exist, treat as active
+  if (product.is_active === undefined) {
+    return false
+  }
+  // Return true if is_active is explicitly false
+  return product.is_active === false
 }
 
 // Stock editing functions
@@ -899,6 +927,15 @@ onMounted(() => {
   overflow-x: auto;
 }
 
+.right-action {
+  display: flex;
+}
+
+.right-action .stock-adjustment-btn {
+  height: 31px;
+  width: 235px;
+}
+
 .stock-table {
   width: 100%;
   border-collapse: collapse;
@@ -1013,6 +1050,11 @@ onMounted(() => {
   color: #4a5568;
 }
 
+.status-inactive {
+  background-color: #fed7d7;
+  color: #c53030;
+}
+
 .product-count, .total-stock {
   font-weight: 600;
   color: #2d3748;
@@ -1054,11 +1096,75 @@ onMounted(() => {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   border: 2px solid transparent;
+  position: relative;
 }
 
 .product-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.product-card.product-inactive {
+  opacity: 0.5;
+  background-color: #f8fafc !important;
+  border: 2px dashed #e2e8f0;
+  filter: grayscale(20%);
+}
+
+.product-card.product-inactive::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.08);
+  pointer-events: none;
+  border-radius: 12px;
+}
+
+.product-card.product-inactive:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+  opacity: 0.6;
+}
+
+/* Make inactive product images less vibrant */
+.product-card.product-inactive .product-image {
+  filter: grayscale(40%);
+  opacity: 0.8;
+}
+
+/* Make inactive product text less prominent */
+.product-card.product-inactive .product-name {
+  color: #6b7280;
+}
+
+.product-card.product-inactive .product-brand {
+  color: #9ca3af;
+}
+
+.product-card.product-inactive .product-sku {
+  color: #d1d5db;
+}
+
+/* Make inactive stat values less prominent */
+.product-card.product-inactive .stat-value {
+  color: #6b7280;
+}
+
+.product-card.product-inactive .stat-label {
+  color: #9ca3af;
+}
+
+/* Make inactive status badge less prominent */
+.product-card.product-inactive .status-badge {
+  opacity: 0.8;
+}
+
+/* Make inactive stock status less prominent */
+.product-card.product-inactive .stock-status {
+  color: #6b7280;
 }
 
 .product-header {
@@ -1117,6 +1223,38 @@ onMounted(() => {
   font-family: 'Monaco', 'Menlo', monospace;
 }
 
+.product-status {
+  margin-top: 8px;
+}
+
+.product-status .status-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.product-status .status-badge.status-active {
+  background: linear-gradient(135deg, #38a169, #2f855a);
+  color: white;
+  animation: pulse-active 2s infinite;
+}
+
+@keyframes pulse-active {
+  0% {
+    box-shadow: 0 1px 3px rgba(56, 161, 105, 0.3);
+  }
+  50% {
+    box-shadow: 0 1px 6px rgba(56, 161, 105, 0.5);
+  }
+  100% {
+    box-shadow: 0 1px 3px rgba(56, 161, 105, 0.3);
+  }
+}
+
 .product-stats {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -1141,6 +1279,7 @@ onMounted(() => {
   font-weight: 600;
   color: #2d3748;
 }
+
 
 .stock-indicator {
   margin-top: 16px;
@@ -1188,6 +1327,15 @@ onMounted(() => {
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
+}
+
+
+/* Status Filter Styles */
+.status-filter {
+  width: 180px;
+  margin-right: 10px;
+  height: 31px !important;
+  padding: 4px 15px !important;
 }
 
 /* Pagination */
@@ -1510,7 +1658,7 @@ onMounted(() => {
   border-color: #9ca3af;
 }
 
-.btn-primary {
+/* .btn-primary {
   padding: 10px 20px;
   background-color: #3b82f6;
   color: white;
@@ -1520,7 +1668,7 @@ onMounted(() => {
   font-weight: 500;
   cursor: pointer;
   transition: background-color 0.2s ease;
-}
+} */
 
 .btn-primary:hover {
   background-color: #2563eb;
@@ -1650,6 +1798,33 @@ onMounted(() => {
 }
 
 .bulk-opname-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Stock Adjustment Button */
+.stock-adjustment-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  /* background-color: #3182ce; */
+  color: white;
+  text-decoration: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.2s ease;
+  margin-right: 12px;
+}
+
+.stock-adjustment-btn:hover {
+  background-color: #2c5aa0;
+  color: white;
+  text-decoration: none;
+}
+
+.stock-adjustment-btn svg {
   width: 16px;
   height: 16px;
 }

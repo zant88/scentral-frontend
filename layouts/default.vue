@@ -178,12 +178,7 @@
                 <span>Balance Management</span>
               </a>
             </li>
-            <li class="nav-item" :class="isActive('/brand/reports')">
-              <a href="javascript:void(0)" @click="navigateTo('/brand/reports')" class="nav-link">
-                <i class="fas fa-chart-bar"></i>
-                <span>Performance Reports</span>
-              </a>
-            </li>
+
           </template>
         </ul>
       </aside>

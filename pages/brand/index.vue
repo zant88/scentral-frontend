@@ -20,43 +20,104 @@
             </div>
           </client-only>
           <div class="right-action">
-            <input type="search" v-model="querySearch" @keyup.enter="getBrandList"  class="form-control" placeholder="Type then press enter" />
+            <div class="filter-controls">
+              <div class="search-wrapper">
+                <i class="fas fa-search search-icon"></i>
+                <input type="search" v-model="filters.q" @keyup.enter="applyFilters" class="form-control search-input" placeholder="Search brands..." />
+              </div>
+              <div class="filters-wrapper">
+                <select v-model="filters.is_active" @change="applyFilters" class="form-control filter-select">
+                  <option value="">All Status</option>
+                  <option value="true">Active</option>
+                  <option value="false">Inactive</option>
+                </select>
+                <select v-model="filters.sort" @change="applyFilters" class="form-control filter-select">
+                  <option value="name">Name</option>
+                  <option value="created_at">Created Date</option>
+                  <option value="updated_at">Updated Date</option>
+                  <option value="balance">Balance</option>
+                  <option value="is_active">Status</option>
+                </select>
+                <button class="btn btn-light sort-btn" @click="toggleOrder" :title="filters.order === 'asc' ? 'Ascending' : 'Descending'">
+                  <i class="fas" :class="filters.order === 'asc' ? 'fa-sort-alpha-down' : 'fa-sort-alpha-up'"></i>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
         <div class="card-body">
-          <table class="table table-striped">
-            <thead>
-              <tr>
-                <th scope="col">&nbsp;</th>
-                <th class="number-cell" scope="col">#</th>
-                <th style="width: 150px;" scope="col">Name</th>
-                <th style="width: calc(100% - 400px);" scope="col">Description</th>
-                <th scope="col">Balance</th>
-                <th scope="col">Active</th>
-                <th scope="col">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(item, i) in brandList" :key="item.id">
-                <td class="checkbox"><input type="checkbox" v-model="checkedItems" :value="item.id" /></td>
-                <td scope="row">{{ i + 1 }}</td>
-                <td class="image-container">
-                  <img :src="item.logo_url" class="logo" />
-                  <NuxtLink :to="`/brand/update/${item.id}`" class="d-block">
-                    {{ item.name }}
-                  </NuxtLink>
-                </td>
-                <td>{{ item.description }}</td>
-                <td class="balance-cell">{{ item.balance || 0 }}</td>
-                <td>{{ item.is_active ? 'Yes' : 'No' }}</td>
-                <td class="actions-cell">
-                  <button @click="showTopUp(item)" class="btn btn-sm btn-success" title="Top Up Balance">
-                    <i class="fas fa-plus"></i>
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="table-responsive">
+            <table class="table table-striped">
+              <thead>
+                <tr>
+                  <th scope="col">&nbsp;</th>
+                  <th class="number-cell" scope="col">#</th>
+                  <th style="width: 150px;" scope="col">Name</th>
+                  <th style="width: calc(100% - 400px);" scope="col">Description</th>
+                  <th scope="col">Balance</th>
+                  <th scope="col">Active</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="loading">
+                  <td colspan="7" class="text-center">
+                    <div class="spinner-border spinner-border-sm" role="status">
+                      <span class="sr-only">Loading...</span>
+                    </div>
+                    Loading...
+                  </td>
+                </tr>
+                <tr v-else-if="brandList.length === 0">
+                  <td colspan="7" class="text-center text-muted">
+                    No brands found
+                  </td>
+                </tr>
+                <tr v-else v-for="(item, i) in brandList" :key="item.id">
+                  <td class="checkbox"><input type="checkbox" v-model="checkedItems" :value="item.id" /></td>
+                  <td scope="row">{{ ((pagination.page - 1) * pagination.limit) + i + 1 }}</td>
+                  <td class="image-container">
+                    <img :src="item.logo_url" class="logo" />
+                    <NuxtLink :to="`/brand/update/${item.id}`" class="d-block">
+                      {{ item.name }}
+                    </NuxtLink>
+                  </td>
+                  <td>{{ item.description }}</td>
+                  <td class="balance-cell">{{ item.balance || 0 }}</td>
+                  <td>{{ item.is_active ? 'Yes' : 'No' }}</td>
+                  <td class="actions-cell">
+                    <button @click="showTopUp(item)" class="btn btn-sm btn-success" title="Top Up Balance">
+                      <i class="fas fa-plus"></i>
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Pagination -->
+          <div class="d-flex justify-content-between align-items-center mt-3" v-if="pagination.total">
+            <div class="text-muted">
+              Showing {{ pagination.from || 0 }} to {{ pagination.to || 0 }} of {{ pagination.total }} entries
+            </div>
+            <ul class="pagination mb-0" v-if="pagination.pages > 1">
+              <li class="page-item" :class="{ disabled: pagination.page <= 1 }">
+                <a class="page-link" href="#" @click.prevent="changePage(pagination.page - 1)" aria-label="Previous">
+                  <span aria-hidden="true">«</span>
+                  <span class="sr-only">Previous</span>
+                </a>
+              </li>
+              <li v-for="page in visiblePages" :key="page" class="page-item" :class="{ active: page === pagination.page }">
+                <a class="page-link" href="#" @click.prevent="changePage(page)">{{ page }}</a>
+              </li>
+              <li class="page-item" :class="{ disabled: pagination.page >= pagination.pages }">
+                <a class="page-link" href="#" @click.prevent="changePage(pagination.page + 1)" aria-label="Next">
+                  <span aria-hidden="true">»</span>
+                  <span class="sr-only">Next</span>
+                </a>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
 
@@ -183,7 +244,23 @@ const brandDescription = ref('');
 const brandActive = ref(true);
 const brandID = ref(null);
 const $toast = useToast();
-const querySearch = ref('');
+const loading = ref(false);
+const filters = ref({
+  q: '',
+  sort: 'name',
+  order: 'asc',
+  is_active: '',
+  page: 1,
+  limit: 20
+});
+const pagination = ref({
+  page: 1,
+  limit: 20,
+  total: 0,
+  pages: 0,
+  from: 0,
+  to: 0
+});
 const anyChecked = computed(() => checkedItems.value.length > 0);
 
 // Currency formatting function
@@ -220,21 +297,90 @@ const toggleAll = (event) => {
 }
 
 const getBrandList = async () => {
-  const accessToken = localStorage.getItem('access_token');
-  let url = `${apiUrl}/api/brand/`;
-  if (querySearch.value) {
-    url += `?q=${querySearch.value}`;
+  loading.value = true;
+  try {
+    const params = new URLSearchParams();
+    
+    // Add filters to params
+    Object.keys(filters.value).forEach(key => {
+      if (filters.value[key] !== '' && filters.value[key] !== null) {
+        params.append(key, filters.value[key]);
+      }
+    });
+
+    const response = await fetchWithAuth(`${apiUrl}/api/brand/?${params.toString()}`);
+    const data = await response.json();
+    
+    if (data.success) {
+      brandList.value = data.data;
+      pagination.value = {
+        ...pagination.value,
+        ...data.meta,
+        from: ((data.meta.page - 1) * data.meta.limit) + 1,
+        to: Math.min(data.meta.page * data.meta.limit, data.meta.total)
+      };
+    }
+  } catch (error) {
+    console.error('Error fetching brands:', error);
+    if (window.$toast) {
+      window.$toast.error('Failed to fetch brands data');
+    }
+  } finally {
+    loading.value = false;
   }
-  const response = await fetchWithAuth(url, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${accessToken}`,
-    },
-  });
-  const data = await response.json();
-  brandList.value = data.data || [];
 }
+
+const applyFilters = () => {
+  filters.value.page = 1;
+  getBrandList();
+}
+
+const toggleOrder = () => {
+  filters.value.order = filters.value.order === 'asc' ? 'desc' : 'asc';
+  applyFilters();
+}
+
+const changePage = (page) => {
+  if (page === '...' || !pagination.value) return;
+  
+  if (page >= 1 && page <= pagination.value.pages) {
+    filters.value.page = page;
+    getBrandList();
+  }
+}
+
+// Computed property for visible pages
+const visiblePages = computed(() => {
+  if (!pagination.value || pagination.value.pages <= 1) return [];
+  
+  const current = pagination.value.page;
+  const total = pagination.value.pages;
+  const delta = 2; // Number of pages to show before and after current page
+  
+  const range = [];
+  const rangeWithDots = [];
+  let l;
+
+  for (let i = 1; i <= total; i++) {
+    if (i === 1 || i === total || (i >= current - delta && i <= current + delta)) {
+      range.push(i);
+    }
+  }
+
+  range.forEach((i) => {
+    if (l) {
+      if (i - l === 2) {
+        rangeWithDots.push(l + 1);
+      } else if (i - l !== 1) {
+        rangeWithDots.push('...');
+      }
+    }
+    rangeWithDots.push(i);
+    l = i;
+  });
+
+  return rangeWithDots;
+});
 
 onMounted(getBrandList);
 
@@ -502,5 +648,225 @@ const submitTopUp = async () => {
 
 .btn-close:hover {
   opacity: 0.75;
+}
+
+/* Pagination styles */
+.pagination {
+  display: flex;
+  padding-left: 0;
+  list-style: none;
+  border-radius: 0.25rem;
+  margin: 0;
+}
+
+.page-link {
+  position: relative;
+  display: block;
+  padding: 0.5rem 0.75rem;
+  margin-left: -1px;
+  line-height: 1.25;
+  color: #007bff;
+  background-color: #fff;
+  border: 1px solid #dee2e6;
+  text-decoration: none;
+}
+
+.page-link:hover {
+  z-index: 2;
+  color: #0056b3;
+  text-decoration: none;
+  background-color: #e9ecef;
+  border-color: #dee2e6;
+}
+
+.page-item.active .page-link {
+  z-index: 3;
+  color: #fff;
+  background-color: #007bff;
+  border-color: #007bff;
+}
+
+.page-item.disabled .page-link {
+  color: #6c757d;
+  pointer-events: none;
+  background-color: #fff;
+  border-color: #dee2e6;
+}
+
+.filter-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.card-header-actionable {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.left-action, .right-action {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.table-responsive {
+  min-height: 400px;
+  overflow-x: auto;
+}
+
+.spinner-border-sm {
+  width: 1rem;
+  height: 1rem;
+}
+
+.text-muted {
+  color: #6c757d !important;
+}
+
+.mr-2 {
+  margin-right: 0.5rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .filter-controls {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    height: auto;
+  }
+  
+  .filters-wrapper {
+    flex-wrap: wrap;
+    height: auto;
+  }
+  
+  .search-wrapper {
+    width: 100%;
+    margin-bottom: 10px;
+  }
+  
+  .card-header-actionable {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .left-action,
+  .right-action {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .search-input {
+    width: 100%;
+  }
+}
+
+.filter-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.search-wrapper {
+  position: relative;
+  height: 42px;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #6c757d;
+  font-size: 0.9rem;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.search-input {
+  padding-left: 40px;
+  padding-right: 15px;
+  border-radius: 25px;
+  border: 1px solid #e4e6fc;
+  background-color: #fff;
+  transition: all 0.3s;
+  height: 42px !important;
+  line-height: 42px;
+  width: 250px;
+  font-size: 14px;
+  box-shadow: none !important;
+}
+
+.search-input:focus {
+  background-color: #fff;
+  border-color: #6777ef;
+  box-shadow: 0 0 0 2px rgba(103, 119, 239, 0.1) !important;
+}
+
+.filters-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 42px;
+}
+
+.filter-select {
+  border-radius: 25px;
+  border: 1px solid #e4e6fc;
+  background-color: #fff;
+  padding: 0 35px 0 15px;
+  height: 42px !important;
+  line-height: normal;
+  cursor: pointer;
+  min-width: 140px;
+  font-size: 14px;
+  box-shadow: none !important;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23343a40' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 16px 12px;
+}
+
+.filter-select:focus {
+  border-color: #6777ef;
+  box-shadow: 0 0 0 2px rgba(103, 119, 239, 0.1) !important;
+}
+
+.sort-btn {
+  border-radius: 50%;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e4e6fc;
+  background-color: #fff;
+  color: #6c757d;
+  transition: all 0.3s;
+  flex-shrink: 0;
+  box-shadow: none !important;
+}
+
+.sort-btn:hover {
+  background-color: #f8f9fa;
+  color: #6777ef;
+  border-color: #6777ef;
+}
+
+.sort-btn:focus {
+  box-shadow: 0 0 0 2px rgba(103, 119, 239, 0.1) !important;
 }
 </style>

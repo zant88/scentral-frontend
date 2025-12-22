@@ -1,0 +1,3240 @@
+<template>
+  <div class="video-player-container">
+    <div id="videoContainer">
+      <video id="videoPlayer" autoplay muted playsinline @click="toggleFullscreen"></video>
+      
+      <!-- Video Caching Progress Component -->
+      <VideoCachingProgress
+        v-if="showCachingProgress"
+        :allVideos="videosToCache"
+        :onCachingComplete="handleCachingComplete"
+        @progress-update="handleCachingProgressUpdate"
+        ref="cachingComponentRef"
+      />
+      
+      <div id="loadingOverlay" :class="{ hidden: (!isLoading && !showCachingProgress) || isFullscreen }">
+        <div class="spinner"></div>
+        <div id="loadingText">{{ loadingText }}</div>
+      </div>
+
+      <div id="statusOverlay" :class="{ hidden: isFullscreen }">
+        <div class="status-item">
+          <span class="status-label">Machine ID:</span>
+          <span class="status-value">{{ machineId }}</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Current Slot:</span>
+          <span class="status-value">{{ currentSlot?.name || currentSlot || 'None' }}</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Ad Type:</span>
+          <span class="status-value">{{ adType }}</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Playback:</span>
+          <span class="status-value">{{ playbackStatus }}</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Perfume Time Today:</span>
+          <span class="status-value">{{ perfumeTimeToday }}s</span>
+        </div>
+      </div>
+
+      <div id="debugOverlay" :class="{ hidden: !debugMode || isFullscreen }">
+        <div style="font-weight: bold; margin-bottom: 5px;">Debug Log</div>
+        <div id="debugLog">
+          <div v-for="(log, index) in debugLogs" :key="index"
+               :class="['log-entry', `log-level-${log.level}`]">
+            <span class="log-time">{{ log.time }}</span>{{ log.message }}
+          </div>
+        </div>
+      </div>
+
+      <div id="errorOverlay" :class="{ hidden: !showError }">
+        <div class="error-title">Playback Error</div>
+        <div class="error-message">{{ errorMessage }}</div>
+        <button class="retry-button" @click="retry">Retry</button>
+      </div>
+
+      <!-- Load New Video Button -->
+      <button id="loadVideoBtn" v-show="!isFullscreen" @click="loadNewVideos" title="Load New Videos">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+      </button>
+
+      <!-- Refresh Slot Times Button -->
+      <button id="refreshSlotBtn" v-show="!isFullscreen" @click="refreshSlotTimes" title="Refresh Slot Times">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+        </svg>
+      </button>
+
+      <!-- Fullscreen Button -->
+      <button id="fullscreenBtn" v-show="!isFullscreen" @click="toggleFullscreen" title="Enter Fullscreen">
+        <svg v-if="!isFullscreen" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+        </svg>
+        <svg v-else xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path>
+        </svg>
+      </button>
+    </div>
+  </div>
+</template>
+
+<script setup>
+/**
+ * Scentral Video Player for Tizen Smart TV
+ * Handles advertisement playback with time slots, MQTT integration, and caching
+ * Updated flow:
+ * 1. Load URL with machineId parameter
+ * 2. Fetch all videos with time slots and balance information
+ * 3. Cache all videos
+ * 4. Play in pattern: ad1, default, ad2, default, ad3...
+ * 5. Log and deduct balance when ads are played
+ * 6. Check current time for slot-based playback
+ * 7. Show black screen outside active hours (08:00-23:00)
+ */
+
+import { ref, reactive, onMounted, onBeforeUnmount, onBeforeMount } from 'vue'
+import VideoCachingProgress from '../components/VideoCachingProgress.vue'
+import Swal from 'sweetalert2'
+
+// Memory management utilities
+const activeBlobUrls = new Set()
+const activeTimeouts = new Set()
+const activeIntervals = new Set()
+let componentMounted = false
+
+// Perfume ad queue management
+const perfumeAdQueue = []
+const PERFUME_AD_DEBOUNCE_DELAY = 500 // 500ms debounce
+const MAX_PERFUME_AD_QUEUE_SIZE = 5
+let isProcessingPerfumeAd = false
+const perfumeAdTimeouts = new Set()
+
+// Centralized blob URL management
+const createManagedBlobUrl = (blob) => {
+  const url = URL.createObjectURL(blob)
+  activeBlobUrls.add(url)
+  return url
+}
+
+const revokeBlobUrl = (url) => {
+  if (activeBlobUrls.has(url)) {
+    URL.revokeObjectURL(url)
+    activeBlobUrls.delete(url)
+  }
+}
+
+const revokeAllBlobUrls = () => {
+  activeBlobUrls.forEach(url => URL.revokeObjectURL(url))
+  activeBlobUrls.clear()
+}
+
+// Centralized timeout management
+const createManagedTimeout = (callback, delay) => {
+  const timeoutId = setTimeout(() => {
+    activeTimeouts.delete(timeoutId)
+    callback()
+  }, delay)
+  activeTimeouts.add(timeoutId)
+  return timeoutId
+}
+
+const clearManagedTimeout = (timeoutId) => {
+  if (activeTimeouts.has(timeoutId)) {
+    clearTimeout(timeoutId)
+    activeTimeouts.delete(timeoutId)
+  }
+}
+
+const clearAllTimeouts = () => {
+  activeTimeouts.forEach(id => clearTimeout(id))
+  activeTimeouts.clear()
+
+  // Clear perfume ad specific timeouts
+  perfumeAdTimeouts.forEach(id => clearTimeout(id))
+  perfumeAdTimeouts.clear()
+}
+
+// Centralized interval management
+const createManagedInterval = (callback, delay) => {
+  const intervalId = setInterval(callback, delay)
+  activeIntervals.add(intervalId)
+  return intervalId
+}
+
+const clearManagedInterval = (intervalId) => {
+  if (activeIntervals.has(intervalId)) {
+    clearInterval(intervalId)
+    activeIntervals.delete(intervalId)
+  }
+}
+
+const clearAllIntervals = () => {
+  activeIntervals.forEach(id => clearInterval(id))
+  activeIntervals.clear()
+}
+
+// Memory monitoring
+const monitorMemory = () => {
+  if (performance.memory && debugMode.value) {
+    const memory = performance.memory
+    const usedMB = Math.round(memory.usedJSHeapSize / 1024 / 1024)
+    const totalMB = Math.round(memory.totalJSHeapSize / 1024 / 1024)
+
+    log('info', `Memory: ${usedMB}MB / ${totalMB}MB, Blob URLs: ${activeBlobUrls.size}, Queue: ${perfumeAdQueue.length}`)
+
+    // Alert if memory usage is high
+    if (usedMB > 100) {
+      log('warn', `High memory usage detected: ${usedMB}MB, triggering cleanup`)
+      // Trigger aggressive cleanup
+      aggressiveMemoryCleanup()
+    }
+  }
+}
+
+// Aggressive memory cleanup for high memory usage
+const aggressiveMemoryCleanup = () => {
+  log('warn', 'Performing aggressive memory cleanup')
+
+  // Revoke all blob URLs
+  revokeAllBlobUrls()
+
+  // Clear perfume ad queue
+  perfumeAdQueue.length = 0
+
+  // Force garbage collection if available
+  if (window.gc) {
+    window.gc()
+  }
+
+  // Clear all pending timeouts
+  clearAllTimeouts()
+}
+
+// Layout definition
+definePageMeta({
+  layout: 'video-player'
+})
+
+const config = useRuntimeConfig();
+const apiBaseUrl = ref(`${config.public.apiBase}`);
+const { $mqtt } = useNuxtApp()
+// Reactive state
+const machineId = ref('')
+
+// Use the global MQTT instance instead of creating a new one
+const mqttClient = computed(() => $mqtt)
+const manifest = ref(null)
+const currentVideo = ref(null)
+const currentSlot = ref(null)
+const perfumeTimeToday = ref(0)
+const lastPerfumeAdTime = ref(null)
+const isPerfumeAdPlaying = ref(false)
+const generalAdQueue = ref([])
+const currentGeneralAdIndex = ref(0)
+const retryCount = ref(0)
+const maxRetries = ref(3)
+const debugMode = ref(false)
+const isLoading = ref(true)
+const loadingText = ref('Initializing video player...')
+const showError = ref(false)
+const errorMessage = ref('')
+const playbackStatus = ref('-')
+const adType = ref('-')
+const debugLogs = ref([])
+const brandBalances = ref({})
+const playbackLoop = ref([])
+const currentLoopIndex = ref(0)
+const isPlayingAd = ref(false)
+const showCachingProgress = ref(false)
+const videosToCache = ref([])
+const startTimeSlot = ref(null)
+const endTimeSlot = ref(null)
+const isPerfumeAdsPlaying = ref(false)
+const cachingProgress = ref({
+  percentage: 0,
+  cachedCount: 0,
+  totalCount: 0,
+  estimatedTime: 0
+})
+const cachingComponentRef = ref(null)
+const isFullscreen = ref(false)
+const slotAssignments = ref([])
+const lastSlotCheckTime = ref(null)
+
+// State to remember last playing video before perfume ads interruption
+const lastPlayingVideo = ref(null)
+const lastLoopIndex = ref(0)
+const lastSlot = ref(null)
+const lastAdType = ref(null)
+
+// New state for enhanced functionality
+const isBlackScreenActive = ref(false)
+const isActiveWindow = ref(false) // 08:00-23:00 active window
+const slotCheckInterval = ref(null)
+const balanceCheckInterval = ref(null)
+const activeWindowCheckInterval = ref(null)
+const slotTimeCheckInterval = ref(null) // New interval for checking slot time every second
+const isMqttHasConnected = ref(false);
+let mqttHandlerRegistered = false
+
+// Configuration functions
+const getMachineId = () => {
+  const urlParams = new URLSearchParams(window.location.search)
+  const machineIdParam = urlParams.get('machineId')
+  if (machineIdParam) {
+    return machineIdParam
+  }
+  
+  // Fallback to device-specific ID (for Tizen)
+  if (window.tizen && window.tizen.systeminfo) {
+    try {
+      const systemInfo = window.tizen.systeminfo
+      return systemInfo.getCapability('http://tizen.org/system/model_name') || 'unknown-device'
+    } catch (e) {
+      log('warn', 'Failed to get Tizen device ID')
+    }
+  }
+  
+  // Fallback to hostname or generated ID
+  return window.location.hostname || `device-${Date.now()}`
+}
+
+const getApiBaseUrl = () => {
+  const urlParams = new URLSearchParams(window.location.search)
+  const apiUrlParam = urlParams.get('apiUrl')
+  if (apiUrlParam) {
+    return apiUrlParam
+  }
+  
+  // Default to backend server on port 3030
+  return apiBaseUrl.value;
+}
+
+const getDebugMode = () => {
+  const urlParams = new URLSearchParams(window.location.search)
+  return urlParams.get('debug') === 'true'
+}
+
+
+// Utility function to clean video URLs
+const cleanVideoUrl = (url) => {
+  if (!url) return url
+  
+  try {
+    // Parse the URL to handle it properly
+    const urlObj = new URL(url)
+    let pathname = urlObj.pathname
+    
+    // Remove "public" from the beginning of the path
+    if (pathname.startsWith('/public/')) {
+      pathname = pathname.substring('/public'.length)
+      log('info', `Cleaned video URL: removed 'public' from path`)
+    }
+    
+    // Reconstruct the URL with the cleaned path
+    return `${urlObj.protocol}//${urlObj.host}${pathname}${urlObj.search}${urlObj.hash}`
+  } catch (error) {
+    log('warn', `Failed to parse video URL: ${error.message}`)
+    
+    // Fallback to simple string replacement
+    if (url.includes('/public/video/')) {
+      return url.replace('/public/video/', '/video/')
+    } else if (url.includes('/public/videos/')) {
+      return url.replace('/public/videos/', '/videos/')
+    }
+    
+    return url
+  }
+}
+
+// Logging functions
+const log = (level, message) => {
+  const timestamp = new Date().toLocaleTimeString()
+  const logMessage = `[${timestamp}] ${level.toUpperCase()}: ${message}`
+  
+  console.log(logMessage)
+  
+  if (debugMode.value) {
+    addDebugLog(level, message)
+  }
+}
+
+const addDebugLog = (level, message) => {
+  // Ensure debugLogs is initialized
+  if (!debugLogs.value) {
+    debugLogs.value = []
+  }
+  
+  const timestamp = new Date().toLocaleTimeString()
+  const logEntry = {
+    time: timestamp,
+    level: level,
+    message: message
+  }
+  
+  debugLogs.value.push(logEntry)
+  
+  // Keep only last 50 entries
+  if (debugLogs.value.length > 50) {
+    debugLogs.value.shift()
+  }
+}
+
+// Load slot assignments from the backend
+const loadSlotAssignments = async () => {
+  try {
+    const response = await fetch(`${apiBaseUrl.value}/api/video-player/slot-assignments/${machineId.value}`)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+    
+    const data = await response.json()
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to load slot assignments')
+    }
+    
+    slotAssignments.value = data.data
+    log('info', `Loaded ${slotAssignments.value.length} slot assignments`)
+    
+  } catch (error) {
+    log('error', `Failed to load slot assignments: ${error.message}`)
+  }
+}
+
+// Check if a video is assigned to the current slot
+const isVideoAssignedToCurrentSlot = (video, currentSlotData) => {
+  if (!currentSlotData || !video) {
+    return false
+  }
+  
+  // First check if the video is in the slot's video IDs (from manifest)
+  if (currentSlotData.general_video_ids && currentSlotData.general_video_ids.length > 0) {
+    const isAssigned = currentSlotData.general_video_ids.includes(video.id)
+    if (isAssigned) {
+      log('info', `Video ${video.title} is in slot ${currentSlotData.name} video list`)
+      return true
+    }
+  }
+  
+  // Fallback to checking slot assignments
+  const videoAssignments = slotAssignments.value.filter(assignment =>
+    assignment.video_id === video.id &&
+    assignment.status === 'ACTIVE'
+  )
+  
+  if (videoAssignments.length === 0) {
+    // Only log as debug, not warn, since we might be using general ads without slot assignments
+    log('info', `No active slot assignments found for video ${video.title}`)
+    return false
+  }
+  
+  // Check if any assignment matches the current slot
+  for (const assignment of videoAssignments) {
+    if (assignment.slot_id === currentSlotData.id) {
+      log('info', `Video ${video.title} is assigned to current slot ${currentSlotData.name}`)
+      return true
+    }
+  }
+  
+  log('info', `Video ${video.title} is not assigned to current slot ${currentSlotData.name}`)
+  return false
+}
+
+// Start monitoring for slot changes
+const startSlotMonitoring = () => {
+  // Check for slot changes every 30 seconds for more responsive changes
+  slotCheckInterval.value = createManagedInterval(() => {
+    const now = new Date()
+    const currentSlotData = getCurrentTimeSlot()
+    
+    if (currentSlotData) {
+      // Check if this is a new slot
+      if (!lastSlotCheckTime.value || currentSlotData.id !== lastSlotCheckTime.value) {
+        log('info', `Slot changed to: ${currentSlotData.name}`)
+        lastSlotCheckTime.value = currentSlotData.id
+        
+        // Refresh slot assignments
+        loadSlotAssignments()
+        
+        // Reinitialize playback loop with new slot
+        initializePlaybackLoop()
+      }
+    } else {
+      // No current slot, check if we just exited a slot
+      if (lastSlotCheckTime.value) {
+        log('info', 'Exited time slot, reinitializing playback')
+        lastSlotCheckTime.value = null
+        initializePlaybackLoop()
+      }
+    }
+  }, 30000) // Check every 30 seconds
+}
+
+// Video event handlers
+const videoEventHandlers = {
+  loadstart: () => {
+    log('info', 'Video loading started')
+    playbackStatus.value = 'Loading...'
+  },
+  canplay: () => {
+    log('info', 'Video can play')
+    playbackStatus.value = 'Ready'
+  },
+  play: () => {
+    log('info', `Video playing: ${currentVideo.value?.title || 'Unknown'}`)
+    playbackStatus.value = 'Playing'
+  },
+  ended: () => {
+    log('info', 'Video ended')
+    handleVideoEnded()
+  },
+  error: (e) => {
+    log('error', `Video error: ${e.message || 'Unknown error'}`)
+    handleVideoError(e)
+  },
+  stalled: () => {
+    log('warn', 'Video playback stalled')
+  },
+  waiting: () => {
+    log('info', 'Video buffering...')
+    playbackStatus.value = 'Buffering...'
+  }
+}
+
+const setupVideoEventListeners = () => {
+  const video = document.getElementById('videoPlayer')
+  
+  Object.entries(videoEventHandlers).forEach(([event, handler]) => {
+    video.addEventListener(event, handler)
+  })
+}
+
+const removeVideoEventListeners = () => {
+  const video = document.getElementById('videoPlayer')
+  
+  Object.entries(videoEventHandlers).forEach(([event, handler]) => {
+    video.removeEventListener(event, handler)
+  })
+}
+
+// MQTT functions - using the global MQTT instance
+
+const subscribeToMqttTopics = () => {
+  if (!mqttClient.value) {
+    log('warn', 'MQTT client not available')
+    return
+  }
+  
+  const topics = [
+    `scentral/video-player/recache/${machineId.value}`,
+    `scentral/video-player/perfume-trigger/${machineId.value}`,
+    'scentral/video-player/recache',
+    'scentral/video-player/perfume-trigger',
+    `scentral/video-assignment/${machineId.value}`,
+    'scentral/video-assignment',
+    'scentral/ads/slot/assignment',
+    'scentral/advertising/state'
+  ]
+  
+  topics.forEach(topic => {
+    try {
+      // Check if unsubscribe method exists before calling it
+      if (typeof mqttClient.value.unsubscribe === 'function') {
+        mqttClient.value.unsubscribe(topic)
+      }
+      mqttClient.value.subscribe(topic)
+      log('info', `Subscribed to: ${topic}`)
+    } catch (error) {
+      log('warn', `Failed to subscribe to ${topic}: ${error.message}`)
+    }
+  })
+}
+
+const handleRecacheTrigger = async (trigger) => {
+  if (trigger.machineId && trigger.machineId !== machineId.value) {
+    return // Not for this machine
+  }
+  
+  log('info', `Recache triggered: ${trigger.triggerReason || 'Unknown reason'}`)
+  
+  if (trigger.version && manifest.value && trigger.version <= manifest.value.recacheVersion) {
+    log('info', 'Skipping recache - version is not newer')
+    return
+  }
+  
+  try {
+    await loadManifest()
+    log('info', 'Recache completed successfully')
+  } catch (error) {
+    log('error', `Recache failed: ${error.message}`)
+  }
+}
+
+const handlePerfumeAdTrigger = async (trigger) => {
+  if (trigger.machineId && trigger.machineId !== machineId.value) {
+    return // Not for this machine
+  }
+
+  if (trigger.action === 'cancel') {
+    log('info', 'Perfume ad cancelled')
+    // Clear any pending perfume ads in queue
+    perfumeAdQueue.length = 0
+    return
+  }
+
+  log('info', `Perfume ad triggered for brand: ${trigger.brandName || trigger.brandId}, queue size: ${perfumeAdQueue.length}`)
+
+  // Add to queue with debounce
+  const perfumeAd = {
+    brandId: trigger.brandId,
+    brandName: trigger.brandName,
+    timestamp: Date.now()
+  }
+
+  // Check if queue is full
+  if (perfumeAdQueue.length >= MAX_PERFUME_AD_QUEUE_SIZE) {
+    log('warn', 'Perfume ad queue is full, dropping oldest request')
+    perfumeAdQueue.shift() // Remove oldest request
+  }
+
+  perfumeAdQueue.push(perfumeAd)
+
+  // Process queue with debounce
+  processPerfumeAdQueue()
+}
+
+// Process perfume ad queue with debouncing
+const processPerfumeAdQueue = () => {
+  if (isProcessingPerfumeAd) {
+    log('info', 'Perfume ad processing already in progress, queueing')
+    return
+  }
+
+  if (perfumeAdQueue.length === 0) {
+    return
+  }
+
+  // Debounce delay to prevent rapid successive calls
+  const timeoutId = perfumeAdTimeouts.add(
+    setTimeout(async () => {
+      perfumeAdTimeouts.delete(timeoutId)
+      isProcessingPerfumeAd = true
+
+      try {
+        const perfumeAd = perfumeAdQueue.shift()
+        if (perfumeAd) {
+          log('info', `Processing queued perfume ad for brand ${perfumeAd.brandName || perfumeAd.brandId}`)
+          await playPerfumeAd(perfumeAd.brandId)
+        }
+      } catch (error) {
+        log('error', `Failed to process perfume ad from queue: ${error.message}`)
+      } finally {
+        isProcessingPerfumeAd = false
+
+        // Process next item in queue if any
+        if (perfumeAdQueue.length > 0) {
+          setTimeout(() => processPerfumeAdQueue(), 1000) // 1 second gap between perfume ads
+        }
+      }
+    }, PERFUME_AD_DEBOUNCE_DELAY)
+  )
+}
+
+const handleVideoAssignmentTrigger = async (trigger) => {
+  // Check if this trigger is for this machine or for all machines
+  if (trigger.machineId && trigger.machineId !== machineId.value) {
+    return // Not for this machine
+  }
+  
+  log('info', `Video assignment trigger received: ${trigger.action} for video ${trigger.videoId} in slot ${trigger.slotId}`)
+  
+  // If a video was removed or updated, refresh our slot assignments
+  if (trigger.action === 'removed' || trigger.action === 'updated') {
+    log('info', 'Refreshing slot assignments due to video assignment change')
+    await loadSlotAssignments()
+    
+    // Reinitialize the playback loop with the updated assignments
+    initializePlaybackLoop()
+    
+    // If the currently playing video was removed, switch to the next video
+    if (trigger.action === 'removed' && currentVideo.value && currentVideo.value.id === trigger.videoId) {
+      log('info', 'Currently playing video was removed, switching to next video')
+      createManagedTimeout(() => {
+        playNextInLoop()
+      }, 1000) // Give a moment before switching
+    }
+  }
+  
+  // If a new video was assigned and should play now, handle it
+  if (trigger.action === 'assigned' && trigger.shouldPlayNow) {
+    log('info', 'New video assigned and should play now')
+    
+    // Find the video in our manifest
+    const video = findVideoInManifest(trigger.videoId)
+    if (video) {
+      // Find the slot
+      const slot = findSlotInManifest(trigger.slotId)
+      if (slot) {
+        // Play the video immediately
+        await playVideo(video, trigger.adType, slot)
+      }
+    }
+  }
+}
+
+// Handle advertising state messages from MQTT
+const handleAdvertisingState = async (data) => {
+  if (!isPerfumeAdPlaying.value) {
+    try {
+      log('info', `Advertising state message received: ${JSON.stringify(data)}`)
+      
+      // Check if data has brand information
+      if (data && data.brand_id !== undefined) {
+        if (data.brand_id === -1) {
+          // Continue with last video (not reset from beginning)
+          log('info', 'Brand is -1, continuing with last video')
+
+          // Clear perfume ad queue when receiving -1
+          perfumeAdQueue.length = 0
+
+          // Stop current video immediately
+          const videoElement = document.getElementById('videoPlayer')
+          if (videoElement && !videoElement.paused) {
+            videoElement.pause()
+            videoElement.currentTime = 0
+          }
+
+          isPerfumeAdPlaying.value = false
+
+          // Continue with last video if available, otherwise play next in loop
+          if (lastPlayingVideo.value) {
+            log('info', `Resuming last video: ${lastPlayingVideo.value.title} in slot ${lastSlot.value?.name || 'None'} with ad_type ${lastAdType.value}`)
+
+            await playVideo(lastPlayingVideo.value, lastAdType.value, lastSlot.value)
+          } else {
+            log('info', 'No last video recorded, playing next in loop')
+            playNextInLoop()
+          }
+        } else {
+          // Queue perfume videos for the specified brand ID
+          log('info', `Brand ID ${data.brand_id} received, queuing perfume videos for this brand`)
+
+          // Find perfume ads for this brand
+          const brandPerfumeAds = manifest.value.perfume_ads.filter(ad => ad.brand_id === parseInt(data.brand_id))
+
+          if (brandPerfumeAds.length > 0) {
+            // Queue all perfume videos for this brand
+            brandPerfumeAds.forEach((perfumeAd, index) => {
+              setTimeout(() => {
+                handlePerfumeAdTrigger({
+                  brandId: perfumeAd.brand_id,
+                  brandName: perfumeAd.brand_name || `Brand ${perfumeAd.brand_id}`,
+                  action: 'play'
+                })
+              }, index * 200) // Stagger by 200ms to prevent overwhelming
+            })
+          } else {
+            log('warn', `No perfume ads found for brand ${data.brand_id}, continuing with regular playback`)
+            playNextInLoop()
+          }
+        }
+      }
+      
+    } catch (error) {
+      log('error', `Failed to handle advertising state: ${error.message}`)
+      isPerfumeAdPlaying.value = false
+      // Continue with regular playback
+      playNextInLoop()
+    }
+  }
+}
+
+// New function to play perfume videos sequentially for a brand
+const playPerfumeVideosSequentially = async (perfumeAds) => {
+  try {
+    isPerfumeAdPlaying.value = true
+    log('info', `Starting sequential playback of ${perfumeAds.length} perfume videos`)
+
+    // Clear existing blob URLs before starting perfume ads
+    revokeAllBlobUrls()
+
+    for (let i = 0; i < perfumeAds.length; i++) {
+      const perfumeAd = perfumeAds[i]
+
+      // Check perfume time cap before playing each video
+      if (perfumeTimeToday.value >= manifest.value.max_cap_seconds) {
+        log('warn', `Perfume ad time cap reached: ${perfumeTimeToday.value}s / ${manifest.value.max_cap_seconds}s`)
+        break
+      }
+
+      log('info', `Playing perfume video ${i + 1}/${perfumeAds.length}: ${perfumeAd.title}`)
+
+      // Clean up video element before starting new perfume ad
+      await cleanupVideoElement()
+
+      // Play the perfume video
+      await playVideo(perfumeAd, 'perfume')
+
+      // Wait for video to finish playing by monitoring the video element
+      await new Promise(resolve => {
+        const videoElement = document.getElementById('videoPlayer')
+        const timeoutIds = []
+
+        const checkVideoEnded = () => {
+          if (!componentMounted) {
+            // Component unmounted, resolve immediately
+            resolve()
+            return
+          }
+
+          if (videoElement.ended) {
+            log('info', `Perfume video ${perfumeAd.title} ended naturally`)
+            resolve()
+          } else if (videoElement.paused && videoElement.currentTime > 0) {
+            log('info', `Perfume video ${perfumeAd.title} was paused, assuming it ended`)
+            resolve()
+          } else {
+            // Check every 500ms with managed timeout
+            const timeoutId = createManagedTimeout(checkVideoEnded, 500)
+            timeoutIds.push(timeoutId)
+          }
+        }
+
+        // Start checking after a short delay to ensure video starts playing
+        const initialTimeoutId = createManagedTimeout(checkVideoEnded, 500)
+        timeoutIds.push(initialTimeoutId)
+
+        // Store timeout IDs for cleanup
+        resolve.cleanup = () => {
+          timeoutIds.forEach(id => clearManagedTimeout(id))
+        }
+      })
+
+      // Small gap between perfume videos
+      await new Promise(resolve => createManagedTimeout(resolve, 1000))
+    }
+
+    // After all perfume videos are played, resume the last video from beginning
+    log('info', 'All perfume videos completed, resuming last video from beginning')
+    isPerfumeAdPlaying.value = false
+
+    // Clean up blob URLs after perfume ads
+    revokeAllBlobUrls()
+
+    // Resume the last video that was playing before the interruption
+    if (lastPlayingVideo.value) {
+      log('info', `Resuming last video from beginning: ${lastPlayingVideo.value.title} in slot ${lastSlot.value?.name || 'None'} with ad_type ${lastAdType.value}`)
+      // Reset the loop index to where we were before
+      currentLoopIndex.value = lastLoopIndex.value
+      await playVideo(lastPlayingVideo.value, lastAdType.value, lastSlot.value)
+
+      // After the resumed video ends, continue with the next video in the loop
+      createManagedTimeout(() => {
+        currentLoopIndex.value = (lastLoopIndex.value + 1) % playbackLoop.value.length
+        playNextInLoop()
+      }, 100)
+    } else {
+      // Fallback to regular playback if no last video is recorded
+      log('info', 'No last video recorded, continuing with regular playback')
+      playNextInLoop()
+    }
+
+  } catch (error) {
+    log('error', `Failed to play perfume videos sequentially: ${error.message}`)
+    isPerfumeAdPlaying.value = false
+
+    // Clean up blob URLs on error
+    revokeAllBlobUrls()
+
+    // Continue with regular playback
+    playNextInLoop()
+  }
+}
+
+// Enhanced video element cleanup with comprehensive memory management
+const cleanupVideoElement = async () => {
+  const videoElement = document.getElementById('videoPlayer')
+  if (!videoElement) return
+
+  try {
+    log('info', 'Starting comprehensive video element cleanup')
+
+    // Force stop all playback activities
+    videoElement.pause()
+    videoElement.currentTime = 0
+
+    // Remove all event listeners to prevent memory leaks
+    videoElement.removeEventListener('loadstart', videoEventHandlers.loadstart)
+    videoElement.removeEventListener('canplay', videoEventHandlers.canplay)
+    videoElement.removeEventListener('play', videoEventHandlers.play)
+    videoElement.removeEventListener('ended', videoEventHandlers.ended)
+    videoElement.removeEventListener('error', videoEventHandlers.error)
+    videoElement.removeEventListener('stalled', videoEventHandlers.stalled)
+    videoElement.removeEventListener('waiting', videoEventHandlers.waiting)
+
+    // Clear all event handlers
+    videoElement.onerror = null
+    videoElement.onstalled = null
+    videoElement.onwaiting = null
+    videoElement.onloadstart = null
+    videoElement.oncanplay = null
+    videoElement.onplay = null
+    videoElement.onended = null
+
+    // Revoke current blob URL if exists
+    if (videoElement.src && videoElement.src.startsWith('blob:')) {
+      revokeBlobUrl(videoElement.src)
+    }
+
+    // Clear src and attributes
+    videoElement.src = ''
+    videoElement.removeAttribute('src')
+    videoElement.removeAttribute('poster')
+
+    // Force load to clear internal buffers
+    videoElement.load()
+
+    // Clear any pending timeouts related to this video
+    clearAllTimeouts()
+
+    // Perform aggressive garbage collection if available
+    if (window.gc) {
+      window.gc()
+    }
+
+    // Wait for cleanup to complete with additional time for memory release
+    await new Promise(resolve => setTimeout(resolve, 500))
+
+    // Re-add event listeners after cleanup
+    setupVideoEventListeners()
+
+    log('info', 'Comprehensive video element cleanup completed')
+
+  } catch (error) {
+    log('warn', `Video element cleanup failed: ${error.message}`)
+
+    // Fallback cleanup - basic approach
+    try {
+      videoElement.pause()
+      videoElement.src = ''
+      videoElement.load()
+      if (videoElement.src && videoElement.src.startsWith('blob:')) {
+        revokeBlobUrl(videoElement.src)
+      }
+    } catch (fallbackError) {
+      log('error', `Fallback video cleanup also failed: ${fallbackError.message}`)
+    }
+  }
+}
+
+// Helper functions to find videos and slots in manifest
+const findVideoInManifest = (videoId) => {
+  if (!manifest.value) return null
+  
+  // Check general ads
+  const generalAd = manifest.value.general_ads.find(ad => ad.id === videoId)
+  if (generalAd) return generalAd
+  
+  // Check perfume ads
+  const perfumeAd = manifest.value.perfume_ads.find(ad => ad.id === videoId)
+  if (perfumeAd) return perfumeAd
+  
+  // Check default video
+  if (manifest.value.default_video && manifest.value.default_video.id === videoId) {
+    return manifest.value.default_video
+  }
+  
+  return null
+}
+
+const findSlotInManifest = (slotId) => {
+  if (!manifest.value) return null
+  
+  return manifest.value.time_slots.find(slot => slot.id === slotId) || null
+}
+
+const loadStartAndEndSlotTime = async () => {
+  try {
+    const response = await fetch(`${apiBaseUrl.value}/api/slot/active`)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+    
+    const data = await response.json()
+    if (data.success) {
+      startTimeSlot.value = data.start_time;
+      endTimeSlot.value = data.end_time;
+      
+      // Check if current time is within the slot range
+      const now = new Date()
+      const currentTime = formatTime(now.getHours(), now.getMinutes())
+      const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
+      
+      // Set isActiveWindow based on whether current time is in slot range
+      isActiveWindow.value = isInSlotRange
+      
+      // log('info', `Current time: ${currentTime}, Slot range: ${startTimeSlot.value} - ${endTimeSlot.value}, In range: ${isInSlotRange}`)
+      
+      // Start checking every second
+      startSlotTimeMonitoring()
+      
+      return isInSlotRange
+    } else {
+      throw new Error(data.message || 'Failed to load active slot times')
+    }
+  } catch (error) {
+    log('error', `Failed to load active slot times: ${error.message}`)
+    return null
+  }
+}
+
+// Start monitoring slot time every second
+const startSlotTimeMonitoring = () => {
+  // Clear any existing interval to prevent memory leaks
+  if (slotTimeCheckInterval.value) {
+    clearInterval(slotTimeCheckInterval.value)
+  }
+  
+  let lastSlotRefreshTime = Date.now()
+  
+  // Check every second
+  slotTimeCheckInterval.value = createManagedInterval(async () => {
+    // console.log('Checking slot time against current time...');
+    const now = new Date()
+    const currentTime = formatTime(now.getHours(), now.getMinutes())
+    // console.log(`Current time: ${currentTime}`);
+    
+    // Refresh slot times from API every 5 minutes to get updates
+    if (Date.now() - lastSlotRefreshTime > 5 * 60 * 1000) {
+      try {
+        const response = await fetch(`${apiBaseUrl.value}/api/slot/active`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success) {
+            const oldStartTime = startTimeSlot.value
+            const oldEndTime = endTimeSlot.value
+            
+            startTimeSlot.value = data.start_time
+            endTimeSlot.value = data.end_time
+            
+            // Log if slot times have changed
+            if (oldStartTime !== data.start_time || oldEndTime !== data.end_time) {
+              log('info', `Slot times updated: ${oldStartTime}-${oldEndTime} → ${data.start_time}-${data.end_time}`)
+            }
+            
+            lastSlotRefreshTime = Date.now()
+          }
+        }
+      } catch (error) {
+        log('warn', `Failed to refresh slot times: ${error.message}`)
+      }
+    }
+    
+    const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
+    // console.log(`Slot range: ${startTimeSlot.value} - ${endTimeSlot.value}, In range: ${isInSlotRange}`);
+    
+    // If current time is outside slot range
+    if (!isInSlotRange) {
+      // Check if we were previously playing videos (not already showing black screen)
+      if (!isBlackScreenActive.value) {
+        log('info', `Time ${currentTime} is outside slot range ${startTimeSlot.value} - ${endTimeSlot.value}, stopping video and showing black screen`)
+
+        // Stop any currently playing video immediately
+        const videoElement = document.getElementById('videoPlayer')
+        if (videoElement && !videoElement.paused) {
+          videoElement.pause()
+          videoElement.currentTime = 0
+          log('info', 'Video stopped immediately due to end of slot time')
+        }
+        showBlackScreen(true)
+      }
+
+    } else {
+      // If current time is within slot range and we were showing black screen
+      if (isBlackScreenActive.value) {
+        log('info', `Time ${currentTime} is within slot range ${startTimeSlot.value} - ${endTimeSlot.value}, resuming video playback`)
+        hideBlackScreen()
+        // Only restart playback if manifest is loaded
+        if (manifest.value) {
+          // Restart playback system if needed
+          if (playbackLoop.value.length === 0) {
+            initializePlaybackLoop()
+          }
+          if (playbackLoop.value.length > 0) {
+            playNextInLoop()
+          }
+        } else {
+          // If manifest is not loaded, we need to initialize the full playback system
+          initializeFullPlaybackSystem()
+        }
+      }
+    }
+  }, 1000) // Check every second
+}
+
+// Refresh slot times from API
+const refreshSlotTimes = async () => {
+  try {
+    const response = await fetch(`${apiBaseUrl.value}/api/slot/active`)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+    
+    const data = await response.json()
+    if (data.success) {
+      const oldStartTime = startTimeSlot.value
+      const oldEndTime = endTimeSlot.value
+      
+      startTimeSlot.value = data.start_time
+      endTimeSlot.value = data.end_time
+      
+      // Log if slot times have changed
+      if (oldStartTime !== data.start_time || oldEndTime !== data.end_time) {
+        log('info', `Slot times refreshed: ${oldStartTime}-${oldEndTime} → ${data.start_time}-${data.end_time}`)
+        
+        // Check if current time is still within the new slot range
+        const now = new Date()
+        const currentTime = formatTime(now.getHours(), now.getMinutes())
+        const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
+        
+        // Update active window status
+        isActiveWindow.value = isInSlotRange
+        
+        // If we were playing videos but now outside the slot range, stop and show black screen
+        if (!isInSlotRange && !isBlackScreenActive.value) {
+          log('info', `After refresh, time ${currentTime} is outside new slot range ${startTimeSlot.value} - ${endTimeSlot.value}, stopping video and showing black screen`)
+          
+          // Stop any currently playing video immediately
+          const videoElement = document.getElementById('videoPlayer')
+          if (videoElement && !videoElement.paused) {
+            videoElement.pause()
+            videoElement.currentTime = 0
+            log('info', 'Video stopped immediately due to end of slot time after refresh')
+          }
+          
+          showBlackScreen(true)
+        }
+        // If we were showing black screen but now within the slot range, resume playback
+        else if (isInSlotRange && isBlackScreenActive.value) {
+          log('info', `After refresh, time ${currentTime} is within new slot range ${startTimeSlot.value} - ${endTimeSlot.value}, resuming video playback`)
+          // loadNewVideos();
+          
+          hideBlackScreen()
+          
+          // Only restart playback if manifest is loaded
+          if (manifest.value) {
+            // Restart playback system if needed
+            if (playbackLoop.value.length === 0) {
+              initializePlaybackLoop()
+            }
+            if (playbackLoop.value.length > 0) {
+              playNextInLoop()
+            }
+          }
+        }
+      }
+      
+      return true
+    } else {
+      throw new Error(data.message || 'Failed to refresh slot times')
+    }
+  } catch (error) {
+    log('error', `Failed to refresh slot times: ${error.message}`)
+    return false
+  }
+}
+
+// Initialize full playback system when entering slot range from black screen
+const initializeFullPlaybackSystem = async () => {
+  try {
+    log('info', 'Initializing full playback system after entering slot range')
+    
+    // Load manifest
+    await loadManifest()
+    
+    // Load brand balances
+    await loadBrandBalances()
+    
+    // Start playback loop
+    if (playbackLoop.value.length > 0) {
+      playNextInLoop()
+    } else {
+      log('warn', 'No videos in playback loop after initialization, staying on black screen')
+      showBlackScreen(true)
+    }
+    
+    // Start monitoring intervals
+    balanceCheckInterval.value = createManagedInterval(loadBrandBalances, 5 * 60 * 1000)
+    startSlotMonitoring()
+    
+  } catch (error) {
+    log('error', `Failed to initialize playback system: ${error.message}`)
+    showBlackScreen(true)
+  }
+}
+
+// Manifest and caching functions
+const loadManifest = async () => {
+  try {
+    loadingText.value = 'Loading video manifest...'
+    
+    const response = await fetch(`${apiBaseUrl.value}/api/video-player/manifest/${machineId.value}`)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+    
+    const data = await response.json()
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to load manifest')
+    }
+    
+    manifest.value = data.data
+    
+    // Ensure manifest has required properties
+    if (!manifest.value.general_ads) manifest.value.general_ads = []
+    if (!manifest.value.perfume_ads) manifest.value.perfume_ads = []
+    if (!manifest.value.time_slots) manifest.value.time_slots = []
+    
+    // Clean video URLs in the manifest
+    if (manifest.value.default_video) {
+      const originalUrl = manifest.value.default_video.file_path
+      manifest.value.default_video.file_path = cleanVideoUrl(originalUrl)
+      if (originalUrl !== manifest.value.default_video.file_path) {
+        log('info', `Cleaned default video URL`)
+      }
+    } else {
+      log('warn', 'No default video found in manifest')
+      // Create a fallback default video if none exists
+      manifest.value.default_video = {
+        id: 'default-fallback',
+        title: 'Default Video',
+        file_path: '/img/video-placeholder.png', // Use a placeholder
+        ad_type: 'default',
+        cost_per_play: 0
+      }
+    }
+    
+    manifest.value.general_ads.forEach(ad => {
+      const originalUrl = ad.file_path
+      ad.file_path = cleanVideoUrl(originalUrl)
+      if (originalUrl !== ad.file_path) {
+        log('info', `Cleaned general ad URL: ${ad.title}`)
+      }
+    })
+    
+    manifest.value.perfume_ads.forEach(ad => {
+      const originalUrl = ad.file_path
+      ad.file_path = cleanVideoUrl(originalUrl)
+      if (originalUrl !== ad.file_path) {
+        log('info', `Cleaned perfume ad URL: ${ad.title}`)
+      }
+    })
+    
+    log('info', `Manifest loaded: ${manifest.value.general_ads.length} general ads, ${manifest.value.perfume_ads.length} perfume ads`)
+    
+    // Load slot assignments
+    await loadSlotAssignments()
+    
+    // Prepare videos for caching
+    prepareVideosForCaching()
+    
+    // Cache videos with progress tracking
+    await cacheVideosWithProgress()
+    
+    // Initialize general ad queue
+    initializeGeneralAdQueue()
+    
+  } catch (error) {
+    log('error', `Failed to load manifest: ${error.message}`)
+    
+    // Create a fallback manifest with default video
+    manifest.value = {
+      default_video: {
+        id: 'default-fallback',
+        title: 'Default Video',
+        file_path: '/img/video-placeholder.png',
+        ad_type: 'default',
+        cost_per_play: 0
+      },
+      general_ads: [],
+      perfume_ads: [],
+      time_slots: [],
+      max_cap_seconds: 300
+    }
+    
+    log('info', 'Using fallback manifest with default video only')
+    
+    // Still try to initialize with the fallback
+    prepareVideosForCaching()
+    await cacheVideosWithProgress()
+    initializeGeneralAdQueue()
+  }
+}
+
+const prepareVideosForCaching = () => {
+  videosToCache.value = []
+  
+  // Add default video if available
+  if (manifest.value.default_video) {
+    videosToCache.value.push(manifest.value.default_video)
+  }
+  
+  // Add general ads
+  videosToCache.value.push(...manifest.value.general_ads)
+  
+  // Add perfume ads
+  videosToCache.value.push(...manifest.value.perfume_ads)
+  
+  log('info', `Prepared ${videosToCache.value.length} videos for caching`)
+}
+
+const cacheVideosWithProgress = async () => {
+  try {
+    showCachingProgress.value = true
+    isLoading.value = false
+    
+    // Wait a bit for the component to be mounted
+    await new Promise(resolve => setTimeout(resolve, 100))
+    
+    for (const video of videosToCache.value) {
+      // Start caching this video
+      if (cachingComponentRef.value?.exposed?.startCachingVideo) {
+        cachingComponentRef.value.exposed.startCachingVideo(video)
+      }
+      
+      try {
+        await cacheVideo(video)
+        
+        // Mark as cached
+        if (cachingComponentRef.value?.exposed?.markVideoAsCached) {
+          cachingComponentRef.value.exposed.markVideoAsCached(video)
+        }
+        
+        log('info', `Cached video: ${video.title}`)
+      } catch (error) {
+        log('error', `Failed to cache video ${video.title}: ${error.message}`)
+        
+        // Handle error in UI
+        if (cachingComponentRef.value?.exposed?.handleCachingError) {
+          cachingComponentRef.value.exposed.handleCachingError(video, error)
+        }
+        
+        throw error
+      }
+    }
+    
+    log('info', 'All videos cached successfully')
+    
+    // Call handleCachingComplete directly after caching is done
+    handleCachingComplete()
+    
+  } catch (error) {
+    log('error', `Video caching failed: ${error.message}`)
+    throw error
+  }
+}
+
+const cacheVideo = async (video) => {
+  try {
+    const cachedVideo = await getCachedVideo(video.id)
+    if (cachedVideo) {
+      log('info', `Video already cached: ${video.title}`)
+      return
+    }
+    
+    log('info', `Caching video: ${video.title}`)
+    
+    let response
+    try {
+      // First try direct fetch
+      response = await fetch(video.file_path)
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+    } catch (fetchError) {
+      // If direct fetch fails due to CORS, try proxy through the API
+      log('warn', `Direct fetch failed due to CORS, trying proxy: ${fetchError.message}`)
+      
+      const proxyUrl = `${apiBaseUrl.value}/api/video-player/proxy-video`
+      const formData = new FormData()
+      formData.append('url', video.file_path)
+      
+      response = await fetch(proxyUrl, {
+        method: 'POST',
+        body: formData
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Proxy fetch failed: HTTP ${response.status}: ${response.statusText}`)
+      }
+    }
+    
+    const blob = await response.blob()
+    
+    // Store in IndexedDB
+    await storeVideoInIndexedDB(video.id, blob, video)
+    
+    log('info', `Video cached: ${video.title}`)
+    
+  } catch (error) {
+    log('error', `Failed to cache video ${video.title}: ${error.message}`)
+    throw error
+  }
+}
+
+const getCachedVideo = async (videoId) => {
+  try {
+    const db = await openIndexedDB()
+    const transaction = db.transaction(['videos'], 'readonly')
+    const store = transaction.objectStore('videos')
+    
+    return new Promise((resolve, reject) => {
+      const request = store.get(videoId)
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    
+  } catch (error) {
+    log('warn', `Failed to get cached video ${videoId}: ${error.message}`)
+    return null
+  }
+}
+
+const storeVideoInIndexedDB = async (videoId, blob, metadata) => {
+  try {
+    const db = await openIndexedDB()
+    const transaction = db.transaction(['videos'], 'readwrite')
+    const store = transaction.objectStore('videos')
+    
+    // Create a clean metadata object without circular references
+    const cleanMetadata = {
+      id: metadata.id,
+      title: metadata.title,
+      description: metadata.description,
+      file_path: metadata.file_path,
+      filename: metadata.filename,
+      thumbnail_path: metadata.thumbnail_path,
+      duration_seconds: metadata.duration_seconds,
+      ad_type: metadata.ad_type,
+      cost_per_play: metadata.cost_per_play,
+      status: metadata.status,
+      priority: metadata.priority,
+      brand_id: metadata.brand_id,
+      brand_name: metadata.brand_name,
+      play_count: metadata.play_count,
+      last_played: metadata.last_played
+    }
+    
+    const record = {
+      id: videoId,
+      blob: blob,
+      metadata: cleanMetadata,
+      cachedAt: new Date().toISOString()
+    }
+    
+    return new Promise((resolve, reject) => {
+      const request = store.put(record)
+      request.onsuccess = () => resolve()
+      request.onerror = () => reject(request.error)
+    })
+    
+  } catch (error) {
+    log('error', `Failed to store video in IndexedDB: ${error.message}`)
+    throw error
+  }
+}
+
+const openIndexedDB = () => {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('ScentralVideoPlayer', 1)
+    
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve(request.result)
+    
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result
+      
+      if (!db.objectStoreNames.contains('videos')) {
+        const store = db.createObjectStore('videos', { keyPath: 'id' })
+        store.createIndex('cachedAt', 'cachedAt', { unique: false })
+      }
+      
+      if (!db.objectStoreNames.contains('playbackLogs')) {
+        const store = db.createObjectStore('playbackLogs', { keyPath: 'id', autoIncrement: true })
+        store.createIndex('timestamp', 'timestamp', { unique: false })
+      }
+    }
+  })
+}
+
+// Balance checking functions
+const loadBrandBalances = async () => {
+  try {
+    const response = await fetch(`${apiBaseUrl.value}/api/video-player/brand-balances/${machineId.value}`)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+    
+    const data = await response.json()
+    if (data.success) {
+      const balances = {}
+      data.data.brand_balances.forEach(brand => {
+        balances[brand.brand_id] = brand
+      })
+      brandBalances.value = balances
+      log('info', `Loaded balances for ${Object.keys(balances).length} brands`)
+    }
+  } catch (error) {
+    log('warn', `Failed to load brand balances: ${error.message}`)
+  }
+}
+
+const canPlayVideo = (video) => {
+  const brandBalance = brandBalances.value[video.brand_id]
+  if (!brandBalance) {
+    log('warn', `No balance info for brand ${video.brand_id}, allowing playback`)
+    return true
+  }
+  
+  // Check if brand has sufficient balance
+  if (brandBalance.current_balance <= 0) {
+    log('info', `Brand ${brandBalance.brand_name} has no balance, skipping video`)
+    return false
+  }
+  
+  // Check estimated remaining plays
+  if (brandBalance.estimated_remaining_plays <= 0 && brandBalance.cost_per_play_avg > 0) {
+    log('info', `Brand ${brandBalance.brand_name} has insufficient balance for more plays, skipping video`)
+    return false
+  }
+  
+  return true
+}
+
+// Playback functions
+const initializePlaybackLoop = () => {
+  // Create the playback loop: [ad1, default, ad2, default, ad3, default...]
+  playbackLoop.value = []
+  
+  // Get current slot
+  const currentSlotData = getCurrentTimeSlot()
+  
+  // Check if we're in active window
+  if (!isActiveWindow.value) {
+    log('info', 'Outside active window, not initializing playback loop')
+    return
+  }
+  
+  // If no current slot, show black screen (idle)
+  if (!currentSlotData) {
+    log('warn', 'No active time slot found, showing black screen (idle mode)')
+    showBlackScreen(true)
+    return
+  }
+  
+  // Filter ads based on current time slot and balance
+  let availableAds = []
+  
+  // First try to find ads assigned to the current slot
+  const slotAssignedAds = manifest.value.general_ads.filter(ad => {
+    if (currentSlotData && currentSlotData.allow_general) {
+      return isVideoAssignedToCurrentSlot(ad, currentSlotData) && canPlayVideo(ad)
+    }
+    return false
+  })
+  
+  if (slotAssignedAds.length > 0) {
+    availableAds = slotAssignedAds
+    log('info', `Using ${availableAds.length} ads assigned to slot ${currentSlotData.name}`)
+  } else {
+    // If no slot-assigned ads, use any available ads with sufficient balance
+    const generalAds = manifest.value.general_ads.filter(ad => canPlayVideo(ad))
+    if (generalAds.length > 0) {
+      availableAds = generalAds
+      log('info', `No slot-assigned ads found, using ${availableAds.length} general ads with sufficient balance`)
+    }
+  }
+  
+  if (availableAds.length === 0) {
+    if (!manifest.value.default_video) {
+      log('warn', 'No default video available, showing black screen (idle mode)')
+      showBlackScreen(true)
+      return
+    }
+    
+    // If no ads but within active slot time, play only default video
+    log('info', `No available general ads for slot ${currentSlotData.name}, playing default video only`)
+    playbackLoop.value.push({
+      type: 'default',
+      video: manifest.value.default_video,
+      originalIndex: 0
+    })
+    log('info', `Created playback loop with default video only for slot ${currentSlotData.name}`)
+  } else if (!manifest.value.default_video) {
+    log('warn', 'No default video available, showing black screen (idle mode)')
+    showBlackScreen(true)
+    return
+  } else {
+    // Create the alternating pattern: ad1, default, ad2, default, ad3, default...
+    // This ensures proper rotation through all available ads
+    for (let i = 0; i < availableAds.length; i++) {
+      const ad = availableAds[i]
+      
+      // Add the ad to the loop
+      playbackLoop.value.push({
+        type: 'ad',
+        video: ad,
+        originalIndex: i // Store original index for proper rotation
+      })
+      
+      // Add default video after each ad
+      playbackLoop.value.push({
+        type: 'default',
+        video: manifest.value.default_video,
+        originalIndex: i // Store same index to maintain pairing
+      })
+    }
+    
+    log('info', `Created playback loop with ${availableAds.length} ads in pattern: Ad1, Default, Ad2, Default, Ad3, Default...`)
+  }
+  
+  currentLoopIndex.value = 0
+  log('info', `Playback loop initialized for slot ${currentSlotData.name} with ${playbackLoop.value.length} items (${availableAds.length} ads)`)
+}
+
+const startPlaybackLoop = () => {
+  // Check current time before starting
+  const now = new Date()
+  const currentTime = formatTime(now.getHours(), now.getMinutes())
+  const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
+  
+  // Check if we're in active window before starting
+  if (!isInSlotRange) {
+    log('info', `Time ${currentTime} is outside slot range ${startTimeSlot.value} - ${endTimeSlot.value}, showing black screen`)
+    showBlackScreen(true)
+    return
+  }
+  
+  hideBlackScreen()
+  updatePerfumeTimeToday()
+  loadBrandBalances() // Load initial balances
+  initializePlaybackLoop()
+  
+  if (playbackLoop.value.length > 0) {
+    playNextInLoop()
+  } else {
+    log('warn', 'No videos in playback loop, showing black screen (idle mode)')
+    showBlackScreen(true)
+    return
+  }
+  
+  // Refresh balances every 5 minutes
+  balanceCheckInterval.value = setInterval(loadBrandBalances, 5 * 60 * 1000)
+  
+  // Start slot monitoring
+  startSlotMonitoring()
+  
+  // Start active window monitoring (if not already started)
+  if (!activeWindowCheckInterval.value) {
+    startActiveWindowMonitoring()
+  }
+}
+
+// Add state to prevent multiple videos from playing simultaneously
+const isVideoSwitching = ref(false)
+let switchingFlagTimeout = null
+
+const playNextInLoop = async () => {
+  // Prevent multiple simultaneous video switches
+  if (isVideoSwitching.value) {
+    log('info', `Video switch already in progress (isVideoSwitching=${isVideoSwitching.value}), skipping`)
+    return
+  }
+
+  try {
+    isVideoSwitching.value = true
+    log('info', `Set switching flag to TRUE in playNextInLoop`)
+
+    // Add safeguard: reset flag if it gets stuck for more than 10 seconds
+    if (switchingFlagTimeout) {
+      clearTimeout(switchingFlagTimeout)
+    }
+    switchingFlagTimeout = setTimeout(() => {
+      log('warn', 'Video switching flag stuck for too long, forcing reset')
+      isVideoSwitching.value = false
+    }, 10000) // 10 second safeguard
+
+    // Check current time before playing
+    const now = new Date()
+    const currentTime = formatTime(now.getHours(), now.getMinutes())
+    const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
+
+    // Check if we're still in active window
+    if (!isInSlotRange) {
+      log('info', `Time ${currentTime} is outside slot range ${startTimeSlot.value} - ${endTimeSlot.value}, stopping playback`)
+      showBlackScreen(true)
+      return
+    }
+
+    if (isPerfumeAdPlaying.value) {
+      log('info', 'Perfume ad is playing, pausing loop')
+      return
+    }
+
+    // Check if current slot has changed and reinitialize if needed
+    const currentSlotData = getCurrentTimeSlot()
+    if (!currentSlotData) {
+      log('info', 'No active time slot, reinitializing playback loop')
+      initializePlaybackLoop()
+      if (playbackLoop.value.length === 0) {
+        log('error', 'No videos available to play')
+        showBlackScreen(true)
+        return
+      }
+    }
+
+    if (playbackLoop.value.length === 0) {
+      log('warn', 'Playback loop is empty, reinitializing')
+      initializePlaybackLoop()
+      if (playbackLoop.value.length === 0) {
+        log('error', 'No videos available to play')
+        showBlackScreen(true)
+        return
+      }
+    }
+
+    const currentItem = playbackLoop.value[currentLoopIndex.value]
+
+    // Check if we can still play this video (balance might have changed)
+    if (currentItem.type === 'ad') {
+      // Check balance first
+      if (!canPlayVideo(currentItem.video)) {
+        log('info', `Video ${currentItem.video.title} can no longer be played due to insufficient balance`)
+
+        // Remove this item and its corresponding default video from the loop
+        const adIndex = currentLoopIndex.value
+        // Find and remove the default video that follows this ad
+        if (adIndex + 1 < playbackLoop.value.length && playbackLoop.value[adIndex + 1].type === 'default') {
+          playbackLoop.value.splice(adIndex, 2) // Remove both ad and its default video
+        } else {
+          playbackLoop.value.splice(adIndex, 1) // Just remove the ad
+        }
+
+        // Adjust the loop index if needed
+        if (currentLoopIndex.value >= playbackLoop.value.length && playbackLoop.value.length > 0) {
+          currentLoopIndex.value = 0 // Wrap around to beginning
+        }
+
+        // If no more ads, reinitialize to get fresh list
+        if (playbackLoop.value.length === 0 || !playbackLoop.value.some(item => item.type === 'ad')) {
+          initializePlaybackLoop()
+        }
+
+        // Schedule next video instead of immediate recursive call
+        scheduleNextVideo()
+        return
+      }
+
+      // Check slot assignment - this is crucial for proper slot-based playback
+      if (!currentSlotData || !currentSlotData.allow_general || !isVideoAssignedToCurrentSlot(currentItem.video, currentSlotData)) {
+        log('info', `Ad ${currentItem.video.title} is not assigned to current slot ${currentSlotData?.name || 'None'}, playing default video`)
+        await playDefaultVideo()
+        // Move to next item
+        currentLoopIndex.value = (currentLoopIndex.value + 1) % playbackLoop.value.length
+        scheduleNextVideo() // Schedule next video instead of returning immediately
+        return
+      }
+    }
+
+    isPlayingAd.value = currentItem.type === 'ad'
+
+    // Clean up any existing video before playing new one
+    await cleanupVideoElement()
+
+    if (currentItem.type === 'ad') {
+      log('info', `Playing ad: ${currentItem.video.title} in slot ${currentSlotData?.name || 'Unknown'} (index ${currentLoopIndex.value}/${playbackLoop.value.length})`)
+      await playVideo(currentItem.video, 'general', currentSlotData)
+    } else {
+      log('info', `Playing default video: ${currentItem.video.title} (index ${currentLoopIndex.value}/${playbackLoop.value.length})`)
+      await playVideo(currentItem.video, 'default')
+    }
+
+    // Move to next item in loop with proper rotation
+    currentLoopIndex.value = (currentLoopIndex.value + 1) % playbackLoop.value.length
+
+    // Log when we complete a full cycle
+    if (currentLoopIndex.value === 0) {
+      log('info', 'Completed full rotation through all ads, starting again from first ad')
+    }
+
+  } catch (error) {
+    log('error', `Failed to play next in loop: ${error.message}`)
+
+    // Try to play default video as fallback
+    try {
+      await playDefaultVideo()
+    } catch (defaultError) {
+      log('error', `Failed to play default video: ${defaultError.message}`)
+      showBlackScreen(true)
+    }
+  } finally {
+    // Clear the safeguard timeout
+    if (switchingFlagTimeout) {
+      clearTimeout(switchingFlagTimeout)
+      switchingFlagTimeout = null
+    }
+
+    // Reset switching flag after a longer delay to ensure video has started properly
+    createManagedTimeout(() => {
+      log('info', 'Resetting switching flag to FALSE after delay')
+      isVideoSwitching.value = false
+    }, 1500) // Give video 1.5 seconds to start properly
+  }
+}
+
+// Schedule next video with proper delay
+const scheduleNextVideo = () => {
+  createManagedTimeout(() => {
+    playNextInLoop()
+  }, 2000) // 2 second delay between video switches
+}
+
+const initializeGeneralAdQueue = () => {
+  generalAdQueue.value = [...manifest.value.general_ads]
+  
+  // Sort by priority and last played time
+  generalAdQueue.value.sort((a, b) => {
+    const priorityOrder = { high: 3, medium: 2, low: 1 }
+    const priorityDiff = (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0)
+    
+    if (priorityDiff !== 0) {
+      return -priorityDiff // Higher priority first
+    }
+    
+    // If same priority, sort by last played (older first)
+    const aLastPlayed = a.last_played ? new Date(a.last_played).getTime() : 0
+    const bLastPlayed = b.last_played ? new Date(b.last_played).getTime() : 0
+    
+    return aLastPlayed - bLastPlayed
+  })
+  
+  currentGeneralAdIndex.value = 0
+  log('info', `General ad queue initialized with ${generalAdQueue.value.length} videos`)
+}
+
+const playNextGeneralAd = async () => {
+  try {
+    if (isPerfumeAdPlaying.value) {
+      log('info', 'Perfume ad is playing, skipping general ad')
+      return
+    }
+    
+    const currentSlotData = getCurrentTimeSlot()
+    if (!currentSlotData || !currentSlotData.allow_general) {
+      log('info', 'No active slot for general ads, playing default video')
+      await playDefaultVideo()
+      return
+    }
+    
+    const availableAds = getAvailableGeneralAds(currentSlotData)
+    if (availableAds.length === 0) {
+      log('info', 'No available general ads for current slot, playing default video')
+      await playDefaultVideo()
+      return
+    }
+    
+    // Select next ad from queue
+    const video = selectNextGeneralAd(availableAds)
+    await playVideo(video, 'general', currentSlotData)
+    
+  } catch (error) {
+    log('error', `Failed to play general ad: ${error.message}`)
+    await playDefaultVideo()
+  }
+}
+
+const getCurrentTimeSlot = () => {
+  const now = new Date()
+  const currentTime = formatTime(now.getHours(), now.getMinutes())
+  
+  // Find the current time slot based on the manifest
+  for (const slot of manifest.value.time_slots) {
+    if (isTimeInSlot(currentTime, slot.start_time, slot.end_time)) {
+      return slot
+    }
+  }
+  
+  return null
+}
+
+const isTimeInSlot = (currentTime, startTime, endTime) => {
+  // Handle time comparison properly
+  const current = parseTime(currentTime)
+  const start = parseTime(startTime)
+  const end = parseTime(endTime)
+  
+  // Handle overnight slots (e.g., 22:00 to 06:00)
+  if (end < start) {
+    return current >= start || current <= end
+  }
+  
+  // Normal time range
+  return current >= start && current <= end
+}
+
+// Helper function to parse time string into minutes for comparison
+const parseTime = (timeStr) => {
+  const [hours, minutes] = timeStr.split(':').map(Number)
+  return hours * 60 + minutes
+}
+
+const formatTime = (hours, minutes) => {
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
+}
+
+// Check if current time is within active slot time
+const checkActiveWindow = () => {
+  const now = new Date()
+  const wasActive = isActiveWindow.value
+  
+  // Check if current time is within the slot range
+  const currentTime = formatTime(now.getHours(), now.getMinutes())
+  const isInSlotRange = isTimeInSlot(currentTime, startTimeSlot.value, endTimeSlot.value)
+  
+  // Set isActiveWindow based on whether current time is in slot range
+  isActiveWindow.value = isInSlotRange
+  
+  // Log state changes
+  if (wasActive !== isActiveWindow.value) {
+    if (isActiveWindow.value) {
+      log('info', `Entering active slot window (${startTimeSlot.value}-${endTimeSlot.value}) - starting playback`)
+      // If we were showing black screen, stop it and resume playback
+      if (isBlackScreenActive.value) {
+        isBlackScreenActive.value = false
+        hideBlackScreen()
+        // Force restart of playback system
+        createManagedTimeout(() => {
+          restartPlaybackSystem()
+        }, 1000)
+      }
+    } else {
+      log('info', `Exiting active slot window (${startTimeSlot.value}-${endTimeSlot.value}) - showing black screen`)
+      // Show black screen when exiting active window
+      showBlackScreen(true) // true indicates power saving mode
+    }
+  }
+  
+  return isActiveWindow.value
+}
+
+// Hide black screen when entering active hours
+const hideBlackScreen = () => {
+  if (isBlackScreenActive.value) {
+    isBlackScreenActive.value = false
+    const videoElement = document.getElementById('videoPlayer')
+    if (videoElement) {
+      videoElement.style.backgroundColor = 'transparent'
+    }
+    log('info', 'Black screen deactivated - entering active hours')
+  }
+}
+
+// Restart the entire playback system when waking up from black screen
+const restartPlaybackSystem = async () => {
+  try {
+    log('info', 'Restarting playback system after black screen wake-up')
+    
+    // Clear any existing intervals to avoid duplicates
+    if (balanceCheckInterval.value) {
+      clearInterval(balanceCheckInterval.value)
+    }
+    if (slotCheckInterval.value) {
+      clearInterval(slotCheckInterval.value)
+    }
+    
+    // Reload fresh data
+    await loadManifest()
+    await loadBrandBalances()
+    
+    // Reinitialize playback loop with fresh data
+    initializePlaybackLoop()
+    
+    // Start the playback loop
+    if (playbackLoop.value.length > 0) {
+      log('info', 'Starting playback after wake-up')
+      playNextInLoop()
+    } else {
+      log('warn', 'No videos available after wake-up, staying on black screen')
+      showBlackScreen(true)
+    }
+    
+    // Restart monitoring intervals
+    balanceCheckInterval.value = createManagedInterval(loadBrandBalances, 5 * 60 * 1000)
+    startSlotMonitoring()
+    
+  } catch (error) {
+    log('error', `Failed to restart playback system: ${error.message}`)
+    showBlackScreen(true)
+  }
+}
+
+// Start monitoring active window changes
+const startActiveWindowMonitoring = () => {
+  // Check every 30 seconds for more responsive wake-up
+  activeWindowCheckInterval.value = setInterval(() => {
+    checkActiveWindow()
+  }, 30000)
+  
+  // Initial check
+  checkActiveWindow()
+}
+
+const getAvailableGeneralAds = (slot) => {
+  return manifest.value.general_ads.filter(video => {
+    // Check if video is assigned to this slot
+    if (slot.general_video_ids && slot.general_video_ids.length > 0) {
+      return slot.general_video_ids.includes(video.id)
+    }
+    
+    // If no specific assignments, all general ads are available
+    return true
+  })
+}
+
+const selectNextGeneralAd = (availableAds) => {
+  if (generalAdQueue.value.length === 0) {
+    initializeGeneralAdQueue()
+  }
+  
+  // Find the next available ad from the queue
+  let attempts = 0
+  while (attempts < generalAdQueue.value.length) {
+    const video = generalAdQueue.value[currentGeneralAdIndex.value]
+    
+    if (availableAds.find(ad => ad.id === video.id)) {
+      currentGeneralAdIndex.value = (currentGeneralAdIndex.value + 1) % generalAdQueue.value.length
+      return video
+    }
+    
+    currentGeneralAdIndex.value = (currentGeneralAdIndex.value + 1) % generalAdQueue.value.length
+    attempts++
+  }
+  
+  // Fallback to first available ad
+  return availableAds[0]
+}
+
+const playPerfumeAd = async (brandId) => {
+  try {
+    if (isPerfumeAdPlaying.value) {
+      log('warn', 'Perfume ad already playing')
+      return
+    }
+    
+    // Check perfume time cap
+    if (perfumeTimeToday.value >= manifest.value.max_cap_seconds) {
+      log('warn', `Perfume ad time cap reached: ${perfumeTimeToday.value}s / ${manifest.value.max_cap_seconds}s`)
+      return
+    }
+    
+    const perfumeAd = manifest.value.perfume_ads.find(ad => ad.brand_id === brandId)
+    if (!perfumeAd) {
+      log('warn', `No perfume ad found for brand ${brandId}`)
+      return
+    }
+    
+    isPerfumeAdPlaying.value = true
+    log('info', `Playing perfume ad: ${perfumeAd.title}`)
+    
+    await playVideo(perfumeAd, 'perfume')
+    
+  } catch (error) {
+    log('error', `Failed to play perfume ad: ${error.message}`)
+    isPerfumeAdPlaying.value = false
+  }
+}
+
+const playDefaultVideo = async () => {
+  try {
+    if (!manifest.value.default_video) {
+      log('warn', 'No default video available, showing black screen')
+      showBlackScreen()
+      return
+    }
+    
+    log('info', `Playing default video: ${manifest.value.default_video.title}`)
+    
+    // Try to play the default video
+    try {
+      await playVideo(manifest.value.default_video, 'default')
+    } catch (playError) {
+      log('error', `Failed to play default video normally: ${playError.message}`)
+      
+      // Try with a direct video element approach as fallback
+      const videoElement = document.getElementById('videoPlayer')
+      if (videoElement) {
+        // Remove any existing error handlers
+        videoElement.onerror = null
+        
+        // Try to load a simple placeholder or black screen
+        videoElement.src = ''
+        videoElement.style.backgroundColor = '#000'
+        videoElement.load()
+        
+        log('info', 'Showing black screen as fallback')
+        showBlackScreen()
+      }
+    }
+    
+  } catch (error) {
+    log('error', `Failed to play default video: ${error.message}`)
+    showBlackScreen()
+  }
+}
+
+const playVideo = async (video, adTypeParam, slot = null) => {
+  // Don't check switching flag here - let playNextInLoop manage it
+  log('info', `playVideo called for: ${video.title}`)
+
+  try {
+    console.log('playing video', video, adTypeParam, slot)
+
+    // Set state before starting video
+    currentVideo.value = video
+    currentSlot.value = slot // Store the full slot object
+    adType.value = adTypeParam
+    console.log('current slot set to', currentSlot.value)
+
+    // Clean up video element before setting new src
+    await cleanupVideoElement()
+
+    // Get cached video
+    const cachedVideo = await getCachedVideo(video.id)
+    let videoUrl
+
+    if (cachedVideo) {
+      videoUrl = createManagedBlobUrl(cachedVideo.blob)
+      log('info', `Playing cached video: ${video.title}`)
+    } else {
+      videoUrl = video.file_path
+      log('warn', `Playing uncached video: ${video.title}`)
+    }
+
+    const videoElement = document.getElementById('videoPlayer')
+
+    // Add error handling for the video element
+    videoElement.onerror = (e) => {
+      log('error', `Video element error: ${e.message || 'Unknown error'}`)
+      // Clean up on error
+      if (videoElement.src && videoElement.src.startsWith('blob:')) {
+        revokeBlobUrl(videoElement.src)
+      }
+
+      // Don't reset flag here - let playNextInLoop handle it in finally block
+
+      // If this is not the default video, try to play the next video instead
+      if (video.ad_type !== 'default') {
+        log('info', 'Error occurred, scheduling next video instead of falling back to default')
+        scheduleNextVideo()
+      }
+    }
+
+    // Set video source
+    log('info', `Setting video src to: ${videoUrl}`)
+    videoElement.src = videoUrl
+    videoElement.load()
+
+    // Wait a moment for the video to load
+    await new Promise(resolve => setTimeout(resolve, 100))
+
+    // Check if video is ready to play
+    if (videoElement.readyState < 2) {
+      log('warn', `Video not ready to play, readyState: ${videoElement.readyState}`)
+
+      // Wait for video to be ready
+      videoElement.addEventListener('canplay', () => {
+        log('info', `Video is now ready to play: ${video.title}`)
+      }, { once: true })
+
+      // Wait up to 5 seconds for video to be ready
+      await new Promise(resolve => {
+        const checkReady = () => {
+          if (videoElement.readyState >= 2 || !currentVideo.value) {
+            resolve()
+          } else {
+            setTimeout(checkReady, 100)
+          }
+        }
+        setTimeout(checkReady, 100)
+        setTimeout(resolve, 5000) // Timeout after 5 seconds
+      })
+    }
+
+    log('info', `Attempting to play video: ${video.title}`)
+
+    // Add a timeout for video play with better error handling
+    const playPromise = videoElement.play()
+    if (playPromise !== undefined) {
+      try {
+        await playPromise
+        log('info', `Video started successfully: ${video.title}`)
+
+        // Don't reset flag here - let playNextInLoop handle it
+
+      } catch (playError) {
+        log('error', `Video play promise rejected: ${playError.message}`)
+
+        // Clean up on play error
+        if (videoElement.src && videoElement.src.startsWith('blob:')) {
+          revokeBlobUrl(videoElement.src)
+        }
+
+        // Don't reset flag on error - let the finally block handle it
+        log('warn', 'Video play failed, will reset flag in finally block')
+
+        // Schedule next video instead of default fallback
+        if (video.ad_type !== 'default') {
+          scheduleNextVideo()
+        }
+        return
+      }
+    } else {
+      // Fallback for browsers that don't return a promise
+      log('info', `Video play started (no promise returned): ${video.title}`)
+    }
+
+    // Extract slot ID properly - handle both slot object and slot ID
+    let slotId = null
+    if (slot) {
+      if (typeof slot === 'object' && slot.id) {
+        slotId = parseInt(slot.id)
+      } else if (typeof slot === 'number') {
+        slotId = slot
+      } else if (typeof slot === 'string') {
+        slotId = parseInt(slot)
+      }
+    }
+
+    // Log playback start
+    logPlaybackEvent({
+      videoId: video.id,
+      brandId: video.brand_id,
+      adType: adTypeParam,
+      slotId: slotId,
+      status: 'started',
+      duration: 0,
+      cost: video.cost_per_play || 0
+    })
+
+    // Monitor memory usage after video starts
+    createManagedTimeout(() => {
+      monitorMemory()
+    }, 2000)
+
+  } catch (error) {
+    log('error', `Failed to play video ${video.title}: ${error.message}`)
+
+    // Clean up video element on error
+    await cleanupVideoElement()
+
+    // Schedule next video instead of falling back to default video
+    if (video.ad_type !== 'default') {
+      log('info', 'Error during video setup, scheduling next video')
+      scheduleNextVideo()
+    } else {
+      // For default video errors, show black screen
+      showBlackScreen(true)
+    }
+  }
+}
+
+const handleVideoEnded = async () => {
+  if (!currentVideo.value || isVideoSwitching.value) {
+    log('info', 'Video ended but no current video or video switching in progress')
+    return
+  }
+
+  try {
+    log('info', `Video ended: ${currentVideo.value.title}`)
+
+    const videoElement = document.getElementById('videoPlayer')
+    const duration = Math.round(videoElement.duration)
+    const actualDuration = Math.round(videoElement.currentTime)
+
+    // Log playback completion
+    console.log('this is current slot in ended', currentSlot.value)
+    await logPlaybackEvent({
+      videoId: currentVideo.value.id,
+      brandId: currentVideo.value.brand_id,
+      adType: currentVideo.value === manifest.value.default_video ? 'default' :
+              (isPerfumeAdPlaying.value ? 'perfume' : 'general'),
+      slotId: currentSlot.value ? currentSlot.value.id : null,
+      status: 'completed',
+      duration: actualDuration,
+      cost: currentVideo.value.cost_per_play || 0
+    })
+
+    // Update perfume time if applicable
+    if (isPerfumeAdPlaying.value) {
+      perfumeTimeToday.value += actualDuration
+      isPerfumeAdPlaying.value = false
+    }
+
+    // Perform comprehensive cleanup
+    await cleanupVideoElement()
+
+    // Clear current video reference
+    currentVideo.value = null
+    currentSlot.value = null
+
+    // Continue playback loop with proper delay
+    log('info', 'Scheduling next video with 2 second delay')
+    scheduleNextVideo()
+
+  } catch (error) {
+    log('error', `Error in handleVideoEnded: ${error.message}`)
+
+    // Fallback: try to continue with next video
+    scheduleNextVideo()
+  }
+}
+
+const handleVideoError = async (error) => {
+  if (!currentVideo.value || isVideoSwitching.value) {
+    log('info', 'Video error but no current video or video switching in progress')
+    return
+  }
+
+  try {
+    log('error', `Video playback error: ${error.message || 'Unknown error'}`)
+
+    // Log playback error
+    await logPlaybackEvent({
+      videoId: currentVideo.value.id,
+      brandId: currentVideo.value.brand_id,
+      adType: currentVideo.value === manifest.value.default_video ? 'default' :
+              (isPerfumeAdPlaying.value ? 'perfume' : 'general'),
+      slotId: currentSlot.value ? currentSlot.value.id : null,
+      status: 'error',
+      duration: 0,
+      cost: 0
+    })
+
+    // Perform cleanup before retry or fallback
+    await cleanupVideoElement()
+
+    // Retry logic with proper scheduling
+    if (retryCount.value < maxRetries.value) {
+      retryCount.value++
+      log('info', `Retrying video playback (${retryCount.value}/${maxRetries.value})`)
+
+      // Use exponential backoff with scheduling
+      const delay = 2000 * retryCount.value
+      createManagedTimeout(() => {
+        if (currentVideo.value && !isVideoSwitching.value) {
+          playVideo(currentVideo.value, isPerfumeAdPlaying.value ? 'perfume' : 'general', currentSlot.value)
+        }
+      }, delay)
+
+    } else {
+      log('error', 'Max retries reached, falling back to next video')
+      retryCount.value = 0
+      isPerfumeAdPlaying.value = false
+
+      // Instead of falling back to default video (which can cause loops), move to next video
+      createManagedTimeout(() => {
+        scheduleNextVideo()
+      }, 2000)
+    }
+
+  } catch (handlerError) {
+    log('error', `Error in handleVideoError: ${handlerError.message}`)
+
+    // Ultimate fallback - try to continue with next video
+    scheduleNextVideo()
+  }
+}
+
+const showBlackScreen = (isPowerSaving = false) => {
+  isBlackScreenActive.value = true
+  const videoElement = document.getElementById('videoPlayer')
+  if (videoElement) {
+    videoElement.src = ''
+    videoElement.load()
+    videoElement.style.backgroundColor = '#000'
+  }
+  
+  if (isPowerSaving) {
+    playbackStatus.value = 'Power saving mode'
+    
+    // Stop all playback loops
+    if (slotCheckInterval.value) {
+      clearInterval(slotCheckInterval.value)
+      slotCheckInterval.value = null
+    }
+    
+    log('info', 'Black screen activated - outside active hours')
+  } else {
+    playbackStatus.value = 'No content'
+    
+    // Try again after 30 seconds for regular black screen
+    createManagedTimeout(() => {
+      if (!isPowerSaving) {
+        playNextInLoop()
+      }
+    }, 30000)
+  }
+}
+
+// Logging and analytics
+const logPlaybackEvent = async (eventData) => {
+  try {
+    // Skip tracking for default videos
+    if (eventData.adType === 'default') {
+      log('info', `Skipping tracking for default video: ${eventData.videoId}`)
+      return
+    }
+    
+    // Check if the brand is eligible to play ads (has sufficient balance)
+    const brandBalance = brandBalances.value[eventData.brandId]
+    if (brandBalance && (brandBalance.current_balance <= 0 ||
+        (brandBalance.estimated_remaining_plays <= 0 && brandBalance.cost_per_play_avg > 0))) {
+      log('info', `Skipping tracking for ineligible brand ${eventData.brandId}: insufficient balance`)
+      return
+    }
+    
+    const event = {
+      machine_id: machineId.value,
+      video_id: eventData.videoId,
+      brand_id: eventData.brandId,
+      ad_type: eventData.adType,
+      slot_id: eventData.slotId,
+      played_at: new Date().toISOString(),
+      duration: eventData.duration,
+      status: eventData.status,
+      cost: eventData.cost,
+      device_timestamp: new Date().toISOString(),
+      recache_version: manifest.value ? manifest.value.recache_version : 0
+    }
+    
+    // Try to send immediately
+    try {
+      const response = await fetch(`${apiBaseUrl.value}/api/video-player/playback-event`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(event)
+      })
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+      
+      log('info', `Playback event logged: ${eventData.adType} - ${eventData.status}`)
+      
+    } catch (networkError) {
+      // Store locally for retry
+      await storePlaybackEventLocally(event)
+      log('warn', `Failed to send playback event, stored locally: ${networkError.message}`)
+    }
+    
+  } catch (error) {
+    log('error', `Failed to log playback event: ${error.message}`)
+  }
+}
+
+const storePlaybackEventLocally = async (event) => {
+  try {
+    const db = await openIndexedDB()
+    const transaction = db.transaction(['playbackLogs'], 'readwrite')
+    const store = transaction.objectStore('playbackLogs')
+    
+    event.timestamp = new Date().toISOString()
+    event.id = undefined // Let auto-increment handle it
+    
+    return new Promise((resolve, reject) => {
+      const request = store.add(event)
+      request.onsuccess = () => resolve()
+      request.onerror = () => reject(request.error)
+    })
+    
+  } catch (error) {
+    log('error', `Failed to store playback event locally: ${error.message}`)
+  }
+}
+
+const updatePerfumeTimeToday = () => {
+  const now = new Date()
+  const today = now.toDateString()
+  const lastReset = localStorage.getItem('perfumeTimeResetDate')
+  
+  if (lastReset !== today) {
+    perfumeTimeToday.value = 0
+    localStorage.setItem('perfumeTimeResetDate', today)
+    localStorage.setItem('perfumeTimeToday', '0')
+  } else {
+    const stored = localStorage.getItem('perfumeTimeToday')
+    perfumeTimeToday.value = parseInt(stored) || 0
+  }
+  
+  // Update every minute
+  createManagedTimeout(() => updatePerfumeTimeToday(), 60000)
+}
+
+// Utility functions
+const loadScript = (src) => {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = src
+    script.onload = resolve
+    script.onerror = reject
+    document.head.appendChild(script)
+  })
+}
+
+// Error handling
+const showErrorDialog = (message) => {
+  errorMessage.value = message
+  showError.value = true
+}
+
+const hideErrorDialog = () => {
+  showError.value = false
+  errorMessage.value = ''
+}
+
+const retry = () => {
+  hideErrorDialog()
+  retryCount.value = 0
+  isPerfumeAdPlaying.value = false
+  playNextGeneralAd()
+}
+
+// Handle caching progress updates
+const handleCachingProgressUpdate = (progress) => {
+  cachingProgress.value = progress
+}
+
+// Handle caching complete
+const handleCachingComplete = () => {
+  log('info', 'Caching completed, starting playback...')
+  showCachingProgress.value = false
+  
+  // Wait a bit for UI to update before starting playback
+  createManagedTimeout(() => {
+    startPlaybackLoop()
+  }, 500)
+}
+
+// Fullscreen functionality
+const toggleFullscreen = () => {
+  const videoContainer = document.getElementById('videoContainer');
+  
+  if (!isFullscreen.value) {
+    // Enter fullscreen
+    if (videoContainer.requestFullscreen) {
+      videoContainer.requestFullscreen();
+    } else if (videoContainer.webkitRequestFullscreen) { /* Safari */
+      videoContainer.webkitRequestFullscreen();
+    } else if (videoContainer.msRequestFullscreen) { /* IE11 */
+      videoContainer.msRequestFullscreen();
+    }
+    isFullscreen.value = true;
+    log('info', 'Entered fullscreen mode');
+  } else {
+    // Exit fullscreen
+    if (document.exitFullscreen) {
+      document.exitFullscreen();
+    } else if (document.webkitExitFullscreen) { /* Safari */
+      document.webkitExitFullscreen();
+    } else if (document.msExitFullscreen) { /* IE11 */
+      document.msExitFullscreen();
+    }
+    isFullscreen.value = false;
+    log('info', 'Exited fullscreen mode');
+  }
+}
+
+// Handle fullscreen change events
+const handleFullscreenChange = () => {
+  if (!document.fullscreenElement && !document.webkitFullscreenElement &&
+      !document.msFullscreenElement) {
+    isFullscreen.value = false;
+  }
+}
+
+// Load new videos function - now performs a full browser reload with cache clearing
+const loadNewVideos = () => {
+  log('info', 'Loading new videos - performing full reload with cache clearing...')
+  
+  // Show loading state immediately
+  isLoading.value = true
+  loadingText.value = 'Reloading with fresh cache...'
+  
+  // Clear all local caches before reload
+  try {
+    // Clear localStorage
+    localStorage.clear()
+    
+    // Clear sessionStorage
+    sessionStorage.clear()
+    
+    // Clear IndexedDB caches
+    if ('caches' in window) {
+      caches.keys().then(cacheNames => {
+        return Promise.all(
+          cacheNames.map(cacheName => caches.delete(cacheName))
+        )
+      }).then(() => {
+        log('info', 'All browser caches cleared successfully')
+      })
+    }
+    
+    // Add timestamp to URL to prevent browser caching
+    const timestamp = Date.now()
+    const url = new URL(window.location)
+    url.searchParams.set('t', timestamp)
+    
+    // Force reload the page with cache bypass
+    window.location.href = url.toString()
+    
+  } catch (error) {
+    log('error', `Error clearing caches: ${error.message}`)
+    // Fallback to simple reload if cache clearing fails
+    window.location.reload(true)
+  }
+}
+
+// Clear video cache from IndexedDB
+const clearVideoCache = async () => {
+  try {
+    const db = await openIndexedDB()
+    const transaction = db.transaction(['videos'], 'readwrite')
+    const store = transaction.objectStore('videos')
+
+    return new Promise((resolve, reject) => {
+      const request = store.clear()
+      request.onsuccess = () => {
+        log('info', 'Video cache cleared successfully')
+        resolve()
+      }
+      request.onerror = () => {
+        log('error', `Failed to clear video cache: ${request.error}`)
+        reject(request.error)
+      }
+    })
+  } catch (error) {
+    log('error', `Failed to clear video cache: ${error.message}`)
+    throw error
+  }
+}
+
+// Video element health monitoring and black screen recovery
+const checkVideoElementHealth = () => {
+  if (!componentMounted) return
+
+  const videoElement = document.getElementById('videoPlayer')
+  if (!videoElement) return
+
+  try {
+    // Check for black screen or unresponsive video element
+    const isVideoStuck = (
+      (currentVideo.value && !isPerfumeAdPlaying.value && !videoElement.paused && !videoElement.ended && videoElement.readyState < 2) ||
+      (currentVideo.value && videoElement.src === '' && !isBlackScreenActive.value)
+    )
+
+    if (isVideoStuck) {
+      log('warn', 'Video element appears to be stuck or black screen detected, attempting recovery')
+      recoverVideoElement()
+      return
+    }
+
+    // Check if video element has valid src
+    if (!videoElement.src && currentVideo.value && !isBlackScreenActive.value) {
+      log('warn', 'Video element has no src but should be playing, attempting recovery')
+      recoverVideoElement()
+    }
+
+  } catch (error) {
+    log('warn', `Video element health check failed: ${error.message}`)
+  }
+}
+
+// Recover video element from black screen or stuck state
+const recoverVideoElement = async () => {
+  try {
+    log('info', 'Starting video element recovery process')
+
+    // Clean up current state
+    await cleanupVideoElement()
+
+    // Clear memory aggressively
+    revokeAllBlobUrls()
+
+    // Check if we have a current video to resume
+    if (currentVideo.value) {
+      log('info', `Recovering video: ${currentVideo.value.title}`)
+      await playVideo(currentVideo.value, adType.value, currentSlot.value)
+    } else {
+      // Try to continue with next in loop
+      log('info', 'No current video, trying to continue playback loop')
+      playNextInLoop()
+    }
+
+    log('info', 'Video element recovery completed')
+
+  } catch (error) {
+    log('error', `Video element recovery failed: ${error.message}`)
+
+    // Fallback to default video or black screen
+    try {
+      await playDefaultVideo()
+    } catch (fallbackError) {
+      log('error', 'Recovery fallback failed, showing black screen')
+      showBlackScreen()
+    }
+  }
+}
+
+// Unified MQTT message handler for all MQTT topics
+function handleMqttMessage(topic, message, data) {
+  try {
+    // const data = typeof message === 'string' ? JSON.parse(message) : message
+    log('info', `MQTT message received on ${topic}: ${JSON.stringify(data)}`)
+    
+    // Handle different message types based on topic
+    if (topic.includes('recache')) {
+      handleRecacheTrigger(data)
+    } else if (topic.includes('perfume-trigger')) {
+      handlePerfumeAdTrigger(data)
+    } else if (topic.includes('video-assignment')) {
+      handleVideoAssignmentTrigger(data)
+    } else if (topic === "scentral/ads/slot/assignment") {
+      // Check if the machine_code matches this page's ID
+      if (data.machine_code === machineId.value) {
+        log('info', `Slot assignment event received for machine: ${machineId.value}`)
+        loadNewVideos()
+      }
+    } else if (topic === "scentral/advertising/state") {
+      handleAdvertisingState(data)
+    } else if (topic === "scentral/ads/balance/update") {
+      loadNewVideos()
+    }
+  } catch (error) {
+    log('error', `Failed to parse MQTT message: ${error.message}`)
+  }
+}
+
+
+function setupMqttHandler() {
+  try {
+    console.log('this is setup mqtt handler', $mqtt)
+    // Register unified MQTT handler for all topics
+    if ($mqtt && $mqtt.registerHandler) {
+      // Use a unique handler ID to prevent duplicates
+      const handlerId = `${machineId.value}`
+      
+      // First unregister any existing handler to prevent duplicates
+      if ($mqtt.unregisterHandler) {
+        try {
+          $mqtt.unregisterHandler(handlerId)
+          log('info', `Cleaned up existing MQTT handler: ${handlerId}`)
+        } catch (cleanupError) {
+          // Ignore cleanup errors, handler might not exist
+          log('info', `No existing handler to cleanup: ${cleanupError.message}`)
+        }
+      }
+      if (!isMqttHasConnected.value) {
+        // Register the unified handler
+        $mqtt.registerHandler(handlerId, handleMqttMessage)
+        log('info', `Registered unified MQTT handler for machine: ${machineId.value}`)
+        
+        // Subscribe to all required topics
+        subscribeToMqttTopics()
+        isMqttHasConnected.value = true // Reset flag after initial setup
+
+      }
+      
+      
+    } else {
+      log('error', 'MQTT client or registerHandler method not available')
+    }
+  } catch (err) {
+    log('error', `Failed to setup MQTT handler: ${err.message}`)
+  }
+}
+
+function cleanupMqttHandler() {
+  try {
+    // Unsubscribe from all topics first
+    if (mqttClient.value) {
+      const topics = [
+        `scentral/video-player/recache/${machineId.value}`,
+        `scentral/video-player/perfume-trigger/${machineId.value}`,
+        'scentral/video-player/recache',
+        'scentral/video-player/perfume-trigger',
+        `scentral/video-assignment/${machineId.value}`,
+        'scentral/video-assignment',
+        'scentral/ads/slot/assignment',
+        'scentral/advertising/state'
+      ]
+      
+      topics.forEach(topic => {
+        try {
+          // Check if unsubscribe method exists before calling it
+          if (typeof mqttClient.value.unsubscribe === 'function') {
+            mqttClient.value.unsubscribe(topic)
+          }
+          log('info', `Unsubscribed from: ${topic}`)
+        } catch (error) {
+          log('warn', `Failed to unsubscribe from ${topic}: ${error.message}`)
+        }
+      })
+    }
+    
+    // Unregister unified MQTT handler when component unmounts
+    if ($mqtt && $mqtt.unregisterHandler) {
+      const handlerId = `video-player-${machineId.value}`
+      $mqtt.unregisterHandler(handlerId)
+      log('info', `Unregistered MQTT handler: ${handlerId}`)
+    }
+  } catch (err) {
+    log('error', `Failed to cleanup MQTT handler: ${err.message}`)
+  }
+}
+
+// Main initialization
+const init = async () => {
+  try {
+    log('info', 'Initializing Scentral Video Player...')
+    
+    // Initialize video element event listeners
+    setupVideoEventListeners()
+    
+    // Add fullscreen event listeners
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('msfullscreenchange', handleFullscreenChange);
+    
+    // Load slot times and check if current time is in range
+    const isInSlotRange = await loadStartAndEndSlotTime();
+
+    // Initialize MQTT connection using the global instance
+    setupMqttHandler();
+    
+    // If current time is not in slot range, show black screen and stop initialization
+    if (isInSlotRange === false) {
+      log('info', 'Current time is outside slot range, showing black screen')
+      showBlackScreen(true)
+      isLoading.value = false
+      playbackStatus.value = 'Outside active hours'
+      return
+    }
+    
+    // Load initial manifest
+    await loadManifest()
+    
+    isLoading.value = false
+    log('info', 'Video player initialized successfully')
+    
+  } catch (error) {
+    log('error', `Initialization failed: ${error.message}`)
+    showErrorDialog(`Initialization failed: ${error.message}`)
+  }
+}
+
+// Lifecycle hooks
+onBeforeMount(() => {
+  // Initialize configuration
+  machineId.value = getMachineId()
+  const urlParams = new URLSearchParams(window.location.search)
+  const apiUrlParam = urlParams.get('apiUrl')
+  if (apiUrlParam) {
+    apiBaseUrl.value = apiUrlParam
+  }
+  debugMode.value = getDebugMode()
+  
+  // Ensure debugLogs is initialized before any logging
+  if (!debugLogs.value) {
+    debugLogs.value = []
+  }
+  
+  if (debugMode.value) {
+    log('info', `Debug mode enabled for machine: ${machineId.value}`)
+  }
+})
+
+onMounted(() => {
+  // Mark component as mounted
+  componentMounted = true
+
+  // Start memory monitoring (always enabled for memory leak prevention)
+  createManagedInterval(() => {
+    monitorMemory()
+  }, 10000) // Monitor every 10 seconds for better memory management
+
+  // Add video element health monitoring
+  createManagedInterval(() => {
+    checkVideoElementHealth()
+  }, 5000) // Check every 5 seconds
+
+  // Add debugging helper - expose to console for debugging
+  window.videoPlayerDebug = {
+    resetSwitchingFlag: () => {
+      log('warn', 'Manually resetting video switching flag')
+      isVideoSwitching.value = false
+      if (switchingFlagTimeout) {
+        clearTimeout(switchingFlagTimeout)
+        switchingFlagTimeout = null
+      }
+    },
+    getSwitchingState: () => ({
+      isVideoSwitching: isVideoSwitching.value,
+      hasTimeout: switchingFlagTimeout !== null
+    }),
+    forcePlayNext: () => {
+      log('warn', 'Force triggering playNextInLoop')
+      isVideoSwitching.value = false
+      playNextInLoop()
+    },
+    debugPlayNext: () => {
+      log('info', '=== DEBUG: Attempting to play next video ===')
+      log('info', `Current switching state: ${isVideoSwitching.value}`)
+      if (isVideoSwitching.value) {
+        log('warn', 'Cannot play - switching flag is true')
+      } else {
+        log('info', 'Switching flag is false, attempting to play')
+        playNextInLoop()
+      }
+    },
+    testVideoElement: () => {
+      const videoElement = document.getElementById('videoPlayer')
+      if (!videoElement) {
+        log('error', 'Video element not found')
+        return
+      }
+
+      log('info', '=== Video Element Debug Info ===')
+      log('info', `src: ${videoElement.src}`)
+      log('info', `currentSrc: ${videoElement.currentSrc}`)
+      log('info', `readyState: ${videoElement.readyState}`)
+      log('info', `networkState: ${videoElement.networkState}`)
+      log('info', `paused: ${videoElement.paused}`)
+      log('info', `ended: ${videoElement.ended}`)
+      log('info', `error: ${videoElement.error}`)
+      log('info', `duration: ${videoElement.duration}`)
+      log('info', `currentTime: ${videoElement.currentTime}`)
+
+      // Test with a simple video URL
+      log('info', 'Testing with sample video...')
+      videoElement.src = 'https://www.w3schools.com/html/mov_bbb.mp4'
+      videoElement.play().then(() => {
+        log('info', 'Sample video played successfully!')
+      }).catch(err => {
+        log('error', `Sample video failed: ${err.message}`)
+      })
+    },
+    debugManifest: () => {
+      log('info', '=== Manifest Debug Info ===')
+      log('info', `Manifest loaded: ${!!manifest.value}`)
+      if (manifest.value) {
+        log('info', `Default video: ${manifest.value.default_video?.title}`)
+        log('info', `General ads: ${manifest.value.general_ads?.length || 0}`)
+        log('info', `Perfume ads: ${manifest.value.perfume_ads?.length || 0}`)
+      }
+      log('info', `Playback loop length: ${playbackLoop.value.length}`)
+      log('info', `Current loop index: ${currentLoopIndex.value}`)
+      log('info', `Current video: ${currentVideo.value?.title}`)
+    }
+  }
+
+  init()
+})
+
+onBeforeUnmount(() => {
+  // Mark component as unmounted
+  componentMounted = false
+
+  // Reset video switching flag to prevent stuck state
+  isVideoSwitching.value = false
+
+  // Cleanup all managed resources
+  clearAllIntervals()
+  clearAllTimeouts()
+  revokeAllBlobUrls()
+
+  // Cleanup MQTT handler
+  cleanupMqttHandler()
+
+  // Remove video event listeners
+  removeVideoEventListeners()
+
+  // Remove fullscreen event listeners
+  document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+  document.removeEventListener('msfullscreenchange', handleFullscreenChange);
+
+  // Force cleanup video element
+  const videoElement = document.getElementById('videoPlayer')
+  if (videoElement) {
+    videoElement.pause()
+    videoElement.src = ''
+    videoElement.load()
+  }
+})
+</script>
+
+<style scoped>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.video-player-container {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: #000;
+  color: #fff;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+}
+
+#videoContainer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+#videoPlayer {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#loadingOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.spinner {
+  width: 60px;
+  height: 60px;
+  border: 4px solid #333;
+  border-top: 4px solid #fff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 20px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+#statusOverlay {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 10px 15px;
+  border-radius: 5px;
+  font-size: 14px;
+  z-index: 5;
+  max-width: 300px;
+}
+
+.status-item {
+  margin: 5px 0;
+  display: flex;
+  justify-content: space-between;
+}
+
+.status-label {
+  color: #ccc;
+}
+
+.status-value {
+  color: #fff;
+  font-weight: bold;
+}
+
+#debugOverlay {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-family: monospace;
+  z-index: 5;
+  max-width: 400px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.log-entry {
+  margin: 2px 0;
+  padding: 2px 0;
+  border-bottom: 1px solid #333;
+}
+
+.log-time {
+  color: #888;
+  margin-right: 5px;
+}
+
+.log-level-info { color: #4CAF50; }
+.log-level-warn { color: #FF9800; }
+.log-level-error { color: #F44336; }
+
+.hidden {
+  display: none !important;
+}
+
+#errorOverlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(244, 67, 54, 0.9);
+  padding: 20px;
+  border-radius: 10px;
+  text-align: center;
+  z-index: 15;
+  max-width: 400px;
+}
+
+.error-title {
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+.error-message {
+  font-size: 14px;
+  margin-bottom: 15px;
+}
+
+.retry-button {
+  background: #fff;
+  color: #F44336;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.retry-button:hover {
+  background: #f5f5f5;
+}
+
+#loadVideoBtn {
+  position: fixed;
+  bottom: 20px;
+  left: 80px;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  border: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 9999;
+  transition: all 0.3s ease;
+}
+
+#loadVideoBtn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.1);
+}
+
+#loadVideoBtn svg {
+  width: 24px;
+  height: 24px;
+}
+
+#fullscreenBtn {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  border: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 9999;
+  transition: all 0.3s ease;
+}
+
+#fullscreenBtn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.1);
+}
+
+#fullscreenBtn svg {
+  width: 24px;
+  height: 24px;
+}
+
+#refreshSlotBtn {
+  position: fixed;
+  bottom: 20px;
+  left: 140px;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  border: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 9999;
+  transition: all 0.3s ease;
+}
+
+#refreshSlotBtn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.1);
+}
+
+#refreshSlotBtn svg {
+  width: 24px;
+  height: 24px;
+}
+</style>
