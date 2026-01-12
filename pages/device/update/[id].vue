@@ -54,6 +54,18 @@
                   </select>
                 </div>
               </div>
+              <div class="col-md-6">
+                <div class="mb-3">
+                  <label for="defaultVideo" class="form-label">Default Video</label>
+                  <select class="form-control" id="defaultVideo" tabindex="5" v-model="defaultVideoID">
+                    <option :value="null">No Default Video</option>
+                    <option v-for="video in videos" :key="video.id" :value="video.id">
+                      {{ video.title }} ({{ video.ad_type }})
+                    </option>
+                  </select>
+                  <small class="text-muted">This video will be displayed when no slot assignments exist for this device.</small>
+                </div>
+              </div>
 
             </div>
             <div class="mb-3">
@@ -85,6 +97,8 @@ const status = ref('');
 const latitude = ref('');
 const longitude = ref('');
 const volumeSprayed = ref(0);
+const defaultVideoID = ref(null);
+const videos = ref([]);
 
 function clearForm() {
   machineCode.value = '';
@@ -93,7 +107,27 @@ function clearForm() {
   latitude.value = '';
   longitude.value = '';
   volumeSprayed.value = 0;
+  defaultVideoID.value = null;
 }
+
+const fetchVideos = async () => {
+  const accessToken = localStorage.getItem('access_token');
+  try {
+    const response = await fetchWithAuth(`${apiUrl}/api/video?status=active&ad_type=default`, {
+      method: 'GET',
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to fetch videos');
+    }
+    videos.value = data.data || [];
+  } catch (error) {
+    $toast.error(error.message || 'Failed to fetch videos', {
+      duration: 5000,
+      position: 'top-right'
+    });
+  }
+};
 
 const fetchDevice = async () => {
   const accessToken = localStorage.getItem('access_token');
@@ -112,6 +146,7 @@ const fetchDevice = async () => {
     latitude.value = data.data.latitude;
     longitude.value = data.data.longitude;
     volumeSprayed.value = data.data.volume_sprayed || 0;
+    defaultVideoID.value = data.data.default_video_id || null;
   } catch (error) {
     $toast.error(error.message || 'Failed to fetch device', {
       duration: 5000,
@@ -163,6 +198,7 @@ const submitForm = async () => {
         volume_sprayed: volumeSprayed.value,
         latitude: latitude.value.toString(),
         longitude: longitude.value.toString(),
+        default_video_id: defaultVideoID.value,
       };
       const response = await fetchWithAuth(`${apiUrl}/api/device/${route.params.id}`, {
         method: 'PUT',
@@ -200,6 +236,7 @@ function closeAdd() {
 }
 
 onMounted(() => {
+  fetchVideos();
   fetchDevice();
 });
 
