@@ -43,8 +43,8 @@
                       <i class="fas fa-cogs"></i>
                     </NuxtLink>
                     &nbsp;
-                    <NuxtLink :to="`/ads/display?device_id=${item.code}`" target="_blank" class="btn btn-outline-primary" title="Show Ads">
-                      <i class="fas fa-ad"></i>
+                    <NuxtLink :to="`/device/update/${item.id}`" class="btn btn-outline-info" title="Configure Default Video">
+                      <i class="fas fa-video"></i>
                     </NuxtLink>
                     &nbsp;
                     <NuxtLink :to="`/video-player?machineId=${item.code}`" target="_blank" class="btn btn-outline-success" title="Video Player">
